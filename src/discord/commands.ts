@@ -261,9 +261,15 @@ async function resolveModelArg(
   arg: string,
 ): Promise<{ value: string } | { error: string }> {
   const models = await availableModels(cwd)
+  const want = arg.toLowerCase()
+  // "opus" should find `opus[1m]` / "Opus (1M context)": the SDK lists the
+  // family under its context-window variant, not the bare alias.
+  const bare = (s: string) => s.toLowerCase().replace(/\[[^\]]*\]$/, '').replace(/\s*\(.*\)$/, '')
   const match =
-    models.find(m => m.value.toLowerCase() === arg.toLowerCase()) ??
-    models.find(m => m.displayName.toLowerCase() === arg.toLowerCase())
+    models.find(m => m.value.toLowerCase() === want) ??
+    models.find(m => m.displayName.toLowerCase() === want) ??
+    models.find(m => bare(m.value) === want) ??
+    models.find(m => bare(m.displayName) === want)
   if (models.length > 0 && !match) {
     return { error: `Unknown model \`${arg}\`. Run \`/model list\` to see the options.` }
   }
