@@ -16,6 +16,7 @@
 
 import { query, type Options, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { Responder, ResponderResult, TurnContext } from './delivery'
+import { log } from '../log'
 
 /** Retry ceiling when Discord gives us no better hint. */
 const DEFAULT_RETRY_MS = 60_000
@@ -24,12 +25,19 @@ const DEFAULT_RETRY_MS = 60_000
  * Extra guidance for the worker. It is short on purpose: the delivery contract
  * is enforced in code, so it does not need to be prompted for.
  */
+/** A late answer the model gives when a background event needs nothing from the user. */
+const NO_REPLY = 'NO_REPLY'
+
 const SYSTEM_APPEND = [
   'You are answering over Discord. Your final message in each turn is posted to the',
   'thread verbatim, so write it as the reply itself — no preamble about what you are',
   'about to do, and no sign-off.',
   'Keep answers tight. Use fenced code blocks for code, commands and file contents.',
   'Discord splits messages over 2000 characters, so prefer brevity over exhaustiveness.',
+  'If a background-task notification wakes you after you have already answered and it',
+  'needs nothing from the user (a watcher expired, a task from an earlier session was',
+  `stopped, nothing changed), reply with exactly ${NO_REPLY} and nothing else; it is not posted.`,
+  'Ignore stale notifications about tasks from an earlier session unless they matter to the user.',
 ].join(' ')
 
 /**
@@ -179,6 +187,7 @@ async function pump(
   linked?.signal.addEventListener('abort', forward)
 
   let lastText = ''
+  let taskNames: string[] = []
   let sessionId: string | undefined
   let compaction: Compaction | undefined
 
@@ -188,6 +197,7 @@ async function pump(
     if (waiter) return waiter(result)
     // Nobody is waiting: this is the model waking up after background work.
     const text = result.kind === 'reply' ? result.text : result.kind === 'error' ? `❌ ${result.message}` : ''
+    if (text.trim() === NO_REPLY) return log.info('late wake-up needed no reply', { conversation: session.ctx.conversationId })
     if (text) void session.ctx.onLateReply?.(text)
   }
 
@@ -199,7 +209,9 @@ async function pump(
         linked?.signal.addEventListener('abort', forward)
       }
       if (message.type === 'system' && message.subtype === 'background_tasks_changed') {
-        session.tasks = message.tasks.filter(t => !t.ambient).length
+        const running = message.tasks.filter(t => !t.ambient)
+        session.tasks = running.length
+        taskNames = running.map(t => `${t.task_type}: ${t.description}`)
         continue
       }
 
@@ -224,11 +236,15 @@ async function pump(
       if (session.tasks === 0) {
         session.close()
       } else {
+        // Closing kills whatever is left. The CLI can keep listing a task that
+        // already ended (an expired Monitor), so this is logged, not posted.
         session.hold = setTimeout(() => {
           if (session.waiter) return
-          void session.ctx.onLateReply?.(
-            `⏹️ Stopped waiting on background work after ${Math.round(BACKGROUND_HOLD_MS / 60000)} min.`,
-          )
+          log.info('closed a held session: background work outlived the hold', {
+            conversation: session.ctx.conversationId,
+            minutes: Math.round(BACKGROUND_HOLD_MS / 60000),
+            tasks: taskNames,
+          })
           session.close()
         }, BACKGROUND_HOLD_MS)
       }
