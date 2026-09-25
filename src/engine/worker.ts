@@ -338,6 +338,10 @@ export function consume(message: SDKMessage, ctx: TurnContext, lastText = ''): C
     // answer and then ends on a tool call or a thinking-only message, it is
     // empty even though the answer exists; post the last text instead.
     const text = message.result?.trim() || lastText
+    // On resume the CLI first reports tasks orphaned by the previous session
+    // and ends that zero-turn pass with an empty result. It answers no one;
+    // the user's own turn follows with its own result.
+    if (!text && message.origin?.kind === 'task-notification') return { sessionId }
     if (!text) {
       return { sessionId, result: { kind: 'error', message: 'the model produced no reply' } }
     }

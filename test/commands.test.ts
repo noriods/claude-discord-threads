@@ -465,4 +465,9 @@ describe('empty final result', () => {
   test('still errors when the model wrote nothing at all', () => {
     expect(consume(success, ctx).result).toMatchObject({ kind: 'error' })
   })
+
+  test('ignores the empty pass for tasks orphaned by the previous session', () => {
+    const orphans = { ...success, num_turns: 0, origin: { kind: 'task-notification' } } as typeof success
+    expect(consume(orphans, ctx).result).toBeUndefined()
+  })
 })
