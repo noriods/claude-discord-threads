@@ -202,6 +202,31 @@ describe('crash recovery', () => {
 })
 
 describe('failure handling', () => {
+  test('a stopped turn still persists the session id it had already opened', async () => {
+    // /stop aborts mid-stream, after the SDK has already handed back a
+    // session id. Losing that id meant the next message in the thread
+    // started a brand-new session with no memory of anything — "continue"
+    // had nothing to continue.
+    const { repo, delivery, sent } = harness(async () => ({
+      kind: 'error',
+      message: 'Stopped.',
+      sessionId: 'sess-stopped',
+    }))
+    const turn = repo.enqueueTurn({
+      threadId: 'thread-1',
+      inboundMessageId: 'msg-1',
+      authorId: 'user-1',
+      content: 'hi',
+    })!
+
+    await delivery.submit(ctxFor(repo, turn.id))
+
+    expect(sent[0]).toContain('Stopped.')
+    expect(repo.getTurn(turn.id)!.state).toBe('failed')
+    expect(repo.getThread('thread-1')!.cc_session_id).toBe('sess-stopped')
+  })
+
+
   test('a model error still produces a visible answer and a terminal state', async () => {
     const { repo, delivery, sent } = harness(async () => ({
       kind: 'error',
@@ -220,6 +245,30 @@ describe('failure handling', () => {
     expect(sent).toHaveLength(1)
     expect(sent[0]).toContain('the model errored mid-turn')
     expect(repo.getTurn(turn.id)!.state).toBe('failed')
+  })
+
+  test('a stopped turn still persists the session id it had already opened', async () => {
+    // /stop aborts mid-stream, after the SDK has already handed back a
+    // session id. Losing that id meant the next message in the thread
+    // started a brand-new session with no memory of anything — "continue"
+    // had nothing to continue.
+    const { repo, delivery, sent } = harness(async () => ({
+      kind: 'error',
+      message: 'Stopped.',
+      sessionId: 'sess-stopped',
+    }))
+    const turn = repo.enqueueTurn({
+      threadId: 'thread-1',
+      inboundMessageId: 'msg-1',
+      authorId: 'user-1',
+      content: 'hi',
+    })!
+
+    await delivery.submit(ctxFor(repo, turn.id))
+
+    expect(sent[0]).toContain('Stopped.')
+    expect(repo.getTurn(turn.id)!.state).toBe('failed')
+    expect(repo.getThread('thread-1')!.cc_session_id).toBe('sess-stopped')
   })
 
   test('a thrown responder is caught and reported rather than losing the turn', async () => {

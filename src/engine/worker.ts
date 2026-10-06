@@ -311,9 +311,9 @@ async function pump(
       if (result.kind === 'error' && compaction) {
         settle({ kind: 'reply', text: describeCompaction(compaction), sessionId })
       } else {
-        // Only a reply carries a session id; retry/error results have no
-        // room for one, and the id is already persisted by then anyway.
-        settle(result.kind === 'reply' ? { ...result, sessionId: sessionId ?? result.sessionId } : result)
+        // A reply or an error both carry the session id the stream produced,
+        // so the thread can resume from it even when the turn itself failed.
+        settle(result.kind === 'reply' || result.kind === 'error' ? { ...result, sessionId: sessionId ?? result.sessionId } : result)
       }
       lastText = ''
       compaction = undefined
@@ -337,16 +337,17 @@ async function pump(
   } catch (err) {
     const retry = retryAfterFrom(err)
     if (retry !== null) return settle({ kind: 'retry', afterMs: retry, reason: 'rate limited' })
-    // An abort is /stop, not a crash: say so plainly.
-    if (abort.signal.aborted) return settle({ kind: 'error', message: 'Stopped.' })
-    return settle({ kind: 'error', message: describe(err) })
+    // An abort is /stop, not a crash: say so plainly. Either way, keep the
+    // session id so the thread resumes instead of starting over.
+    if (abort.signal.aborted) return settle({ kind: 'error', message: 'Stopped.', sessionId })
+    return settle({ kind: 'error', message: describe(err), sessionId })
   } finally {
     linked?.signal.removeEventListener('abort', forward)
   }
 
   // The stream ended without a result for the waiting turn — treat as a
   // failure rather than posting nothing, so the turn is visibly settled.
-  if (session.waiter) settle({ kind: 'error', message: 'the model produced no reply' })
+  if (session.waiter) settle({ kind: 'error', message: 'the model produced no reply', sessionId })
 }
 
 export type Compaction = { preTokens: number; postTokens?: number; durationMs?: number }
