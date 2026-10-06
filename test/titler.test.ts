@@ -164,7 +164,7 @@ describe('/rename', () => {
   test('with a name, sets it now', async () => {
     const s = setup({ doneTurns: 3 })
     const out = await handleCommand('/rename Pip Guides', ctxOf(s))
-    expect(out.handled && out.reply).toContain('Pip Guides')
+    expect(out.handled && 'reply' in out && out.reply).toContain('Pip Guides')
     expect(s.renames).toEqual(['Pip Guides'])
     expect(s.repo.getThread('thread-1')).toMatchObject({ title: 'Pip Guides', named_turns: 3 })
     expect(s.asked).toHaveLength(0)
@@ -181,14 +181,14 @@ describe('/rename', () => {
   test('without a name, applies a suggestion', async () => {
     const s = setup()
     const out = await handleCommand('/rename', ctxOf(s))
-    expect(out.handled && out.reply).toContain('RaR Boost Ads')
+    expect(out.handled && 'reply' in out && out.reply).toContain('RaR Boost Ads')
     expect(s.renames).toEqual(['RaR Boost Ads'])
   })
 
   test('says so when there is no suggestion', async () => {
     const s = setup()
     const out = await handleCommand('/rename', { ...ctxOf(s), suggestTitle: async () => null })
-    expect(out.handled && out.reply).toContain('/rename <name>')
+    expect(out.handled && 'reply' in out && out.reply).toContain('/rename <name>')
     expect(s.renames).toEqual([])
   })
 })

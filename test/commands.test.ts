@@ -18,6 +18,12 @@ import { handleCommand, expandCommand, RECAP_PROMPT } from '../src/discord/comma
 import { keepThreadsOpen } from '../src/discord/threads'
 import { consume, describeCompaction } from '../src/engine/worker'
 
+/** Every command under test here answers with a reply, never a forward. */
+function replyOf(out: Awaited<ReturnType<typeof handleCommand>>): string {
+  if (out.handled && 'reply' in out) return out.reply
+  throw new Error(`expected a reply, got: ${JSON.stringify(out)}`)
+}
+
 function setup(
   opts: { archived?: () => void; failArchive?: boolean; running?: boolean } = {},
 ) {
@@ -86,7 +92,7 @@ describe('/cwd', () => {
   test('with no argument it reports the current directory', async () => {
     const { ctx } = setup()
     const out = await handleCommand('/cwd', ctx)
-    expect(out.handled && out.reply).toContain('/home/agent')
+    expect(replyOf(out)).toContain('/home/agent')
   })
 
   test('a valid directory is persisted', async () => {
@@ -94,7 +100,7 @@ describe('/cwd', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cwd-'))
     const out = await handleCommand(`/cwd ${dir}`, ctx)
 
-    expect(out.handled && out.reply).toContain(dir)
+    expect(replyOf(out)).toContain(dir)
     expect(repo.getThread('thread-1')!.cwd).toBe(dir)
   })
 
@@ -102,7 +108,7 @@ describe('/cwd', () => {
     const { ctx, repo } = setup()
     const out = await handleCommand('/cwd /definitely/not/here', ctx)
 
-    expect(out.handled && out.reply).toContain('does not exist')
+    expect(replyOf(out)).toContain('does not exist')
     expect(repo.getThread('thread-1')!.cwd).toBe('/home/agent')
   })
 
@@ -113,7 +119,7 @@ describe('/cwd', () => {
     writeFileSync(file, 'x')
 
     const out = await handleCommand(`/cwd ${file}`, ctx)
-    expect(out.handled && out.reply).toContain('not a directory')
+    expect(replyOf(out)).toContain('not a directory')
     expect(repo.getThread('thread-1')!.cwd).toBe('/home/agent')
   })
 
@@ -134,7 +140,7 @@ describe('/done', () => {
 
     expect(archived).toBe(true)
     expect(repo.getThread('thread-1')!.state).toBe('archived')
-    expect(out.handled && out.reply).toContain('Archived')
+    expect(replyOf(out)).toContain('Archived')
   })
 
   test('a missing Manage Threads permission is explained, not swallowed', async () => {
@@ -145,7 +151,7 @@ describe('/done', () => {
     // The ledger still records intent, so the keep-open sweep will not reopen
     // a thread the user has finished with.
     expect(repo.getThread('thread-1')!.state).toBe('archived')
-    expect(out.handled && out.reply).toContain('Manage Threads')
+    expect(replyOf(out)).toContain('Manage Threads')
   })
 })
 
@@ -162,7 +168,7 @@ describe('/status', () => {
     repo.setThreadSession('thread-1', 'sess-xyz')
 
     const out = await handleCommand('/status', ctx)
-    const reply = out.handled ? out.reply : ''
+    const reply = replyOf(out)
     expect(reply).toContain('sess-xyz')
     expect(reply).toContain('/home/agent')
     expect(reply).toContain('1 done')
@@ -208,13 +214,13 @@ describe('/clear', () => {
     expect(repo.getThread('thread-1')!.cc_session_id).toBeNull()
     // The Discord thread and its history survive; only Claude's memory goes.
     expect(repo.getThread('thread-1')!.state).toBe('open')
-    expect(out.handled && out.reply).toContain('fresh conversation')
+    expect(replyOf(out)).toContain('fresh conversation')
   })
 
   test('says so when there is nothing to clear', async () => {
     const { ctx } = setup()
     const out = await handleCommand('/clear', ctx)
-    expect(out.handled && out.reply).toContain('Nothing to clear')
+    expect(replyOf(out)).toContain('Nothing to clear')
   })
 })
 
@@ -222,13 +228,13 @@ describe('/stop', () => {
   test('reports when a turn was actually cancelled', async () => {
     const { ctx } = setup({ running: true })
     const out = await handleCommand('/stop', ctx)
-    expect(out.handled && out.reply).toContain('Stopping')
+    expect(replyOf(out)).toContain('Stopping')
   })
 
   test('does not claim to stop something that is not running', async () => {
     const { ctx } = setup({ running: false })
     const out = await handleCommand('/stop', ctx)
-    expect(out.handled && out.reply).toContain('Nothing is running')
+    expect(replyOf(out)).toContain('Nothing is running')
   })
 })
 
@@ -236,7 +242,7 @@ describe('/permissions', () => {
   test('lists the modes when given no argument', async () => {
     const { ctx } = setup()
     const out = await handleCommand('/permissions', ctx)
-    const reply = out.handled ? out.reply : ''
+    const reply = replyOf(out)
     expect(reply).toContain('auto')
     expect(reply).toContain('acceptEdits')
   })
@@ -250,14 +256,14 @@ describe('/permissions', () => {
   test('an unknown mode changes nothing', async () => {
     const { ctx, repo } = setup()
     const out = await handleCommand('/permissions yolo', ctx)
-    expect(out.handled && out.reply).toContain('Unknown mode')
+    expect(replyOf(out)).toContain('Unknown mode')
     expect(repo.getThread('thread-1')!.permission_mode).toBeNull()
   })
 
   test('bypassPermissions can be set for one thread', async () => {
     const { ctx, repo } = setup()
     const out = await handleCommand('/permissions bypassPermissions', ctx)
-    expect(out.handled && out.reply).toContain('bypassPermissions')
+    expect(replyOf(out)).toContain('bypassPermissions')
     expect(repo.getThread('thread-1')!.permission_mode).toBe('bypassPermissions')
   })
 
@@ -267,11 +273,28 @@ describe('/permissions', () => {
   })
 })
 
+describe('/yolo', () => {
+  test('bypasses permissions for this thread, the one door to it', async () => {
+    const { ctx, repo } = setup()
+    const out = await handleCommand('/yolo', ctx)
+    expect(replyOf(out)).toContain('on')
+    expect(repo.getThread('thread-1')!.permission_mode).toBe('bypassPermissions')
+  })
+
+  test('/yolo off returns to auto', async () => {
+    const { ctx, repo } = setup()
+    await handleCommand('/yolo', ctx)
+    const out = await handleCommand('/yolo off', ctx)
+    expect(replyOf(out)).toContain('off')
+    expect(repo.getThread('thread-1')!.permission_mode).toBeNull()
+  })
+})
+
 describe('/cost', () => {
   test('says so before any turn has completed', async () => {
     const { ctx } = setup()
     const out = await handleCommand('/cost', ctx)
-    expect(out.handled && out.reply).toContain('No completed turns')
+    expect(replyOf(out)).toContain('No completed turns')
   })
 
   test('sums recorded usage across completed turns only', async () => {
@@ -286,7 +309,7 @@ describe('/cost', () => {
     repo.failTurn(b.id, 'boom')
 
     const out = await handleCommand('/cost', ctx)
-    const reply = out.handled ? out.reply : ''
+    const reply = replyOf(out)
     expect(reply).toContain('$0.0200')
     expect(reply).toContain('150')
     // The $99 failed turn must not be counted: the user got no answer for it.
@@ -305,7 +328,7 @@ describe('/threads', () => {
       header_message_id: null,
     })
     const out = await handleCommand('/threads', ctx)
-    const reply = out.handled ? out.reply : ''
+    const reply = replyOf(out)
     expect(reply).toContain('thread-1')
     expect(reply).toContain('thread-9')
     expect(reply).toContain('← here')
@@ -315,7 +338,7 @@ describe('/threads', () => {
     const { ctx, repo } = setup()
     repo.archiveThread('thread-1')
     const out = await handleCommand('/threads', ctx)
-    expect(out.handled && out.reply).toContain('No open threads')
+    expect(replyOf(out)).toContain('No open threads')
   })
 })
 
@@ -330,7 +353,7 @@ describe('/compact', () => {
   test('is advertised in /help, marked as the one that costs tokens', async () => {
     const { ctx } = setup()
     const out = await handleCommand('/help', ctx)
-    const reply = out.handled ? out.reply : ''
+    const reply = replyOf(out)
     expect(reply).toContain('/compact')
     expect(reply).toContain('costs tokens')
   })
@@ -374,7 +397,7 @@ describe('/model global', () => {
   test('sets the model new threads start on, without moving this thread', async () => {
     const { ctx, repo } = setup()
     const out = await handleCommand('/model global sonnet', ctx)
-    const reply = out.handled ? out.reply : ''
+    const reply = replyOf(out)
     expect(reply).toContain('sonnet')
     expect(repo.defaultModel()).toBe('sonnet')
     // The open thread keeps whatever it was opened with.
@@ -407,7 +430,7 @@ describe('/model global', () => {
     const { ctx, repo } = setup()
     repo.setDefaultModel('sonnet')
     const out = await handleCommand('/model global default', ctx)
-    expect(out.handled && out.reply).toContain('account default')
+    expect(replyOf(out)).toContain('account default')
     expect(repo.defaultModel()).toBeNull()
   })
 
@@ -423,7 +446,7 @@ describe('/model global', () => {
     const { ctx, repo } = setup()
     repo.setDefaultModel('sonnet')
     const out = await handleCommand('/model', ctx)
-    const reply = out.handled ? out.reply : ''
+    const reply = replyOf(out)
     expect(reply).toContain('Model for this thread')
     expect(reply).toContain('New threads start on: **sonnet**')
   }, 30_000)
@@ -442,7 +465,7 @@ describe('/model outside a thread', () => {
   test('setting a model in a channel sets what new threads start on', async () => {
     const { ctx, repo } = setup()
     const out = await handleCommand('/model sonnet', inChannel(ctx))
-    const reply = out.handled ? out.reply : ''
+    const reply = replyOf(out)
     expect(reply).toContain('New threads will start on')
     expect(repo.defaultModel()).toBe('sonnet')
     // Answering must not conjure a thread row for a channel.
@@ -453,7 +476,7 @@ describe('/model outside a thread', () => {
     const { ctx, repo } = setup()
     repo.setDefaultModel('sonnet')
     const out = await handleCommand('/model', inChannel(ctx))
-    const reply = out.handled ? out.reply : ''
+    const reply = replyOf(out)
     expect(reply).toContain('New threads start on: **sonnet**')
     expect(reply).not.toContain('no conversation here yet')
   }, 30_000)
@@ -461,7 +484,7 @@ describe('/model outside a thread', () => {
   test('commands that are genuinely thread-scoped still say so', async () => {
     const { ctx } = setup()
     const out = await handleCommand('/cwd', inChannel(ctx))
-    expect(out.handled && out.reply).toContain('no conversation here yet')
+    expect(replyOf(out)).toContain('no conversation here yet')
   })
 })
 
