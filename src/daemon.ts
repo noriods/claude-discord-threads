@@ -112,7 +112,11 @@ function parentChannelOf(msg: Message): string {
 const dmChannelUsers = new Map<string, string>()
 
 /** The ledger row for a conversation, created on first use. */
-function ensureThread(convo: Conversation, rootMessageId: string, model?: string | null) {
+function ensureThread(
+  convo: Conversation,
+  rootMessageId: string,
+  override?: { model?: string; permissionMode?: string },
+) {
   const existing = repo.getThread(convo.id)
   // Posting after `/done` reopens the conversation, so it stays open again.
   if (existing?.state === 'archived') repo.reopenThread(convo.id)
@@ -130,9 +134,11 @@ function ensureThread(convo: Conversation, rootMessageId: string, model?: string
       // A new thread inherits the global default set by `/model global`, or
       // `/model <name> <message>`'s override when that is what started it. It
       // is copied, not referenced, so changing the default later cannot move a
-      // conversation already under way onto a different model.
-      model: model ?? repo.defaultModel(),
-      permission_mode: null,
+      // conversation already under way onto a different model. `/yolo
+      // <message>`'s override is applied the same way, straight into
+      // permission_mode, so a thread can be born already in yolo mode.
+      model: override?.model ?? repo.defaultModel(),
+      permission_mode: override?.permissionMode ?? null,
       header_message_id: null,
     })
   )
@@ -202,11 +208,12 @@ async function handleInbound(msg: Message): Promise<void> {
     conversationId: msg.channelId,
     interrupt: id => delivery.interrupt(id),
   })
-  // `/model <name> <message>` is the one command that is not a terminal
-  // reply: it resolves to a model override plus the text to actually send, so
-  // it falls through to the normal turn pipeline below instead of answering
-  // here. Every other command is a complete answer with no turn.
-  let forward: { content: string; model: string } | null = null
+  // `/model <name> <message>` and `/yolo <message>` are the commands that are
+  // not a terminal reply: each resolves to an override plus the text to
+  // actually send, so they fall through to the normal turn pipeline below
+  // instead of answering here. Every other command is a complete answer with
+  // no turn.
+  let forward: { content: string; model?: string; permissionMode?: string } | null = null
   if (command.handled) {
     if ('forward' in command) {
       forward = command.forward
@@ -222,14 +229,22 @@ async function handleInbound(msg: Message): Promise<void> {
 
   const convo = await resolveConversation(msg, repo)
   const existing = repo.getThread(convo.id)
-  const thread = ensureThread(convo, msg.id, forward?.model)
+  const thread = ensureThread(convo, msg.id, forward ?? undefined)
 
-  // An existing thread does not get the override for free — `/model` only
-  // ever takes effect "starting with the next message", and this message is
-  // that next message.
-  if (existing && forward && existing.model !== forward.model) {
+  // An existing thread does not get the override for free — `/model` and
+  // `/yolo` only ever take effect "starting with the next message", and this
+  // message is that next message.
+  if (existing && forward?.model !== undefined && existing.model !== forward.model) {
     repo.setThreadModel(convo.id, forward.model)
     thread.model = forward.model
+  }
+  if (
+    existing &&
+    forward?.permissionMode !== undefined &&
+    existing.permission_mode !== forward.permissionMode
+  ) {
+    repo.setThreadPermissionMode(convo.id, forward.permissionMode)
+    thread.permission_mode = forward.permissionMode
   }
 
   // Say which model is answering, as the thread's first message. Awaited so it
@@ -240,7 +255,7 @@ async function handleInbound(msg: Message): Promise<void> {
     } catch (err) {
       log.debug('could not post model header', { thread: convo.id, error: describeError(err) })
     }
-  } else if (existing && forward) {
+  } else if (existing && forward?.model !== undefined) {
     try {
       await syncModelHeader(client, repo, convo.id)
     } catch (err) {
