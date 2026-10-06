@@ -267,7 +267,7 @@ async function handleInbound(msg: Message): Promise<void> {
   // Attachments are downloaded here rather than exposed as a tool: workers get
   // no Discord tools at all, so this is the only path by which an image or a
   // log file reaches the model.
-  let content = await composeTurnContent(msg, forward?.content)
+  let { text: content, images } = await composeTurnContent(msg, forward?.content)
 
   // A thread someone else opened (the #maps project threads): quote its first
   // message so the model knows the topic, and never rename it.
@@ -282,6 +282,7 @@ async function handleInbound(msg: Message): Promise<void> {
     inboundMessageId: msg.id,
     authorId: msg.author.id,
     content,
+    imagePaths: images.length ? JSON.stringify(images) : null,
   })
   repo.setWatermark(convo.channelId, msg.id)
   // Already held: a gateway redelivery or a backlog replay raced us.

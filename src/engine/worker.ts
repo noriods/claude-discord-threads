@@ -14,11 +14,16 @@
  * SDK signatures are pinned in docs/sdk-notes.md against the shipped .d.ts.
  */
 
+import { readFileSync } from 'fs'
 import { query, type Options, type SDKMessage, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { Responder, ResponderResult, TurnContext } from './delivery'
-import { log } from '../log'
+import type { InlineImage } from '../store/db'
+import { log, describeError } from '../log'
 import { assertAttachable } from '../discord/util'
 import { expandCommand } from '../discord/commands'
+
+/** What a streamed user turn's `message.content` may hold. */
+type UserContent = SDKUserMessage['message']['content']
 
 /** Retry ceiling when Discord gives us no better hint. */
 const DEFAULT_RETRY_MS = 60_000
@@ -165,7 +170,7 @@ export function makeClaudeResponder(workerOpts: WorkerOptions = {}): Responder {
     }
     live.set(ctx.conversationId, session)
     const reply = new Promise<ResponderResult>(r => (session.waiter = r))
-    inbox.push(ctx.turn.content)
+    inbox.push(buildInitialContent(ctx.turn.content, ctx.turn.image_paths))
     void pump(session, query({ prompt: inbox.messages(), options }), abort).finally(() => {
       clearTimeout(session.hold)
       if (live.get(ctx.conversationId) === session) live.delete(ctx.conversationId)
@@ -184,14 +189,50 @@ export function makeClaudeResponder(workerOpts: WorkerOptions = {}): Responder {
   return Object.assign(respond, { steer })
 }
 
+/**
+ * Turn a turn's stored content into what the SDK's first message carries.
+ *
+ * Plain text stays a plain string. A turn with inline images (small, common
+ * image attachments — see `discord/inbound.ts`) becomes a text block plus one
+ * image block per attachment, read fresh off disk and base64-encoded — the
+ * same shape Claude Code's own CLI sends for a pasted image. That guarantees
+ * the model actually sees the picture in this turn's context, rather than a
+ * file path it may or may not bother to Read.
+ */
+export function buildInitialContent(content: string, imagePathsJson: string | null): UserContent {
+  if (!imagePathsJson) return content
+
+  let images: InlineImage[]
+  try {
+    images = JSON.parse(imagePathsJson)
+  } catch (err) {
+    log.warn('could not parse stored image_paths, falling back to text only', {
+      error: describeError(err),
+    })
+    return content
+  }
+  if (images.length === 0) return content
+
+  const blocks: Extract<UserContent, unknown[]> = [{ type: 'text', text: content }]
+  for (const img of images) {
+    try {
+      const data = readFileSync(img.path).toString('base64')
+      blocks.push({ type: 'image', source: { type: 'base64', media_type: img.mediaType, data } })
+    } catch (err) {
+      log.warn('could not read inline image, skipping it', { path: img.path, error: describeError(err) })
+    }
+  }
+  return blocks
+}
+
 /** The session's input: user messages in, closed when nothing more is owed. */
 class Inbox {
-  private queue: Array<{ content: string; priority?: SDKUserMessage['priority'] }> = []
+  private queue: Array<{ content: UserContent; priority?: SDKUserMessage['priority'] }> = []
   private wake?: () => void
   private closed = false
 
-  push(content: string, priority?: SDKUserMessage['priority']): void {
-    this.queue.push({ content: expandCommand(content), priority })
+  push(content: UserContent, priority?: SDKUserMessage['priority']): void {
+    this.queue.push({ content: typeof content === 'string' ? expandCommand(content) : content, priority })
     this.wake?.()
   }
 
