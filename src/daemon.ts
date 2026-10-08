@@ -30,6 +30,7 @@ import { PermissionBroker } from './discord/permissions'
 import { handleCommand } from './discord/commands'
 import { attachSlashHandler, registerGuildCommands } from './discord/slash'
 import { attachAskHandler } from './discord/ask'
+import { attachCommandButtons } from './discord/buttons'
 import { composeTurnContent } from './discord/inbound'
 import { log, describeError } from './log'
 import { StatusLine } from './discord/status'
@@ -423,6 +424,7 @@ client.once('clientReady', async c => {
     isAllowedUser: userId => loadAccess().allowFrom.includes(userId),
     startTurn: startTurnOnMessage,
   })
+  attachCommandButtons(client, userId => loadAccess().allowFrom.includes(userId))
   await registerGuildCommands(client, await guildIdsForOptedInChannels())
   void keepThreadsOpen(client, repo)
   const sweep = setInterval(() => void keepThreadsOpen(client, repo), KEEP_OPEN_SWEEP_MS)
