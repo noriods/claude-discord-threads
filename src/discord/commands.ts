@@ -63,13 +63,32 @@ const HELP = [
   '_(outside a thread, `/model` is `/model global` — there is no thread to set)_',
   '`/permissions [mode]` — show or set the permission mode',
   '`/compact` — summarise this conversation to free up context _(costs tokens)_',
-  '`/recap` — where this thread stands and what comes next _(costs tokens)_',
+  '`/recap` — how this thread started, what got done, where it stands, what is next _(costs tokens)_',
   '',
   '**Elsewhere**',
   '`/threads` — every open thread',
   '',
   'Anything else is a message for Claude.',
 ].join('\n')
+
+/**
+ * What `/recap` asks the model. Claude Code's own /recap only says where a
+ * thread stands; in a long thread the owner also wants how it started.
+ */
+export const RECAP_PROMPT = [
+  'Session recap of this whole thread. Plain words, short lines, this layout:',
+  '**Started with:** what I first asked for, in one or two lines, in my words.',
+  '**Done so far:** 3-6 bullets, outcomes only, in order.',
+  '**Where it stands:** what is live, running or half done now.',
+  '**Waiting on me:** only if something is; the exact step.',
+  '**Next:** the next step.',
+  'No tool calls unless a fact needs checking. Under 1500 characters.',
+].join('\n')
+
+/** Turn text the model should see: `/recap` becomes the recap prompt. */
+export function expandCommand(content: string): string {
+  return /^\s*\/recap\s*$/i.test(content) ? RECAP_PROMPT : content
+}
 
 export async function handleCommand(raw: string, ctx: CommandContext): Promise<CommandOutcome> {
   const text = raw.trim()
