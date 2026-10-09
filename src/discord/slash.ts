@@ -44,6 +44,11 @@ export const SLASH_COMMANDS: CommandSpec[] = [
   { name: 'clear', description: 'Forget the conversation but keep the thread' },
   { name: 'stop', description: 'Cancel the turn currently running in this thread' },
   { name: 'done', description: 'Archive this thread' },
+  {
+    name: 'rename',
+    description: 'Rename this thread, or let Claude pick a short name',
+    option: { name: 'name', description: 'New name; leave empty for a suggestion' },
+  },
   { name: 'usage', description: 'Plan limits: 5-hour and weekly windows' },
   { name: 'cost', description: 'What this thread has spent' },
   { name: 'context', description: 'Context window used by this conversation' },

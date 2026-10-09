@@ -26,6 +26,7 @@ import { statSync } from 'fs'
 import type { Client } from 'discord.js'
 import type { Repo } from '../store/repo'
 import { availableModels, contextUsage, planUsage } from '../engine/control'
+import { applyName, renameFromSuggestion, type Suggest } from '../engine/titler'
 import { syncModelHeader } from './threads'
 import { DEFAULT_CWD } from '../config'
 import { log, describeError } from '../log'
@@ -38,6 +39,8 @@ export type CommandContext = {
   conversationId: string
   /** Cancels a running turn; supplied by the daemon. */
   interrupt?: (conversationId: string) => boolean
+  /** Thread-name suggester for `/rename`; tests swap in a fake. */
+  suggestTitle?: Suggest
 }
 
 const PERMISSION_MODES = ['default', 'acceptEdits', 'auto', 'plan', 'dontAsk', 'bypassPermissions'] as const
@@ -49,6 +52,7 @@ const HELP = [
   '`/clear` — forget the conversation, keep the thread',
   '`/stop` — cancel the turn that is running',
   '`/done` — archive this thread',
+  '`/rename [name]` — rename this thread, or let Claude pick a short name',
   '',
   '**Claude**',
   '`/usage` — plan limits: 5-hour and weekly windows',
@@ -88,6 +92,8 @@ export async function handleCommand(raw: string, ctx: CommandContext): Promise<C
       return reply(stop(ctx))
     case 'done':
       return reply(await done(ctx))
+    case 'rename':
+      return reply(await rename(ctx, arg))
     case 'usage':
       return reply(await usage(ctx))
     case 'cost':
@@ -175,6 +181,27 @@ async function done(ctx: CommandContext): Promise<string> {
     return (
       'Marked done in my records, but Discord refused to archive the thread — ' +
       'the bot needs the **Manage Threads** permission for that.'
+    )
+  }
+}
+
+async function rename(ctx: CommandContext, arg: string): Promise<string> {
+  const thread = ctx.repo.getThread(ctx.conversationId)
+  if (!thread) return NO_THREAD
+  if (thread.guild_id === null) return 'This is a DM, so there is no thread to rename.'
+  try {
+    const name = arg
+      ? await applyName(ctx.client, ctx.repo, ctx.conversationId, arg)
+      : await renameFromSuggestion(ctx.client, ctx.repo, ctx.conversationId, ctx.suggestTitle)
+    if (name) return `Renamed to **${name}**.`
+    return arg
+      ? 'This is not a thread, so there is nothing to rename.'
+      : 'No name came to mind — try `/rename <name>`.'
+  } catch (err) {
+    log.warn('rename failed', { conversationId: ctx.conversationId, error: describeError(err) })
+    return (
+      'Discord refused the rename — the bot needs **Manage Threads**, ' +
+      'and a thread can only be renamed twice per ten minutes.'
     )
   }
 }
