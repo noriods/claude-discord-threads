@@ -19,8 +19,11 @@ import { log, describeError } from '../log'
 
 /** Done turns between automatic renames. */
 export const RENAME_EVERY_TURNS = 6
-const TITLE_MODEL = 'claude-haiku-4-5-20251001'
+// Haiku kept naming threads after one early detail or a misheard word.
+const TITLE_MODEL = 'claude-sonnet-5'
 const RECENT_MESSAGES = 12
+/** The opening messages set the thread's direction, so they always count. */
+const OPENING_MESSAGES = 3
 
 export type Suggest = (current: string, messages: string[]) => Promise<string | null>
 
@@ -50,6 +53,31 @@ export function parseTitle(raw: string): string | null {
   return name
 }
 
+/**
+ * Only the owner's own words. A message that replies to the bot quotes it
+ * ("Replying to …" plus "> " lines), and links are someone else's words too.
+ */
+export function ownWords(content: string): string {
+  return content
+    .split('\n')
+    .filter(line => !/^\s*>/.test(line) && !/^\s*Replying to .+:\s*$/i.test(line))
+    .join(' ')
+    .replace(/^\s*Replying to [^:]+:\s*>.*$/is, '')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/Files attached to this Discord message.*$/is, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** Opening messages plus the latest ones, oldest first, in his words only. */
+export function messagesForTitle(repo: Repo, threadId: string): string[] {
+  const opening = repo.openingMessages(threadId, OPENING_MESSAGES)
+  const recent = repo.recentMessages(threadId, RECENT_MESSAGES)
+  const all = [...opening, ...recent.filter(m => !opening.includes(m))]
+  // Slash commands (/recap, /rename) are not part of the conversation.
+  return all.filter(m => !m.trimStart().startsWith('/')).map(ownWords).filter(Boolean)
+}
+
 /** Ask a small model, no tools, one turn, what the thread is about now. */
 export const suggestTitle: Suggest = async (current, messages) => {
   const prompt = [
@@ -57,14 +85,19 @@ export const suggestTitle: Suggest = async (current, messages) => {
     STYLE_EXAMPLES.map(e => `- ${e}`).join('\n'),
     '',
     'Short (usually 1-3 words, never more than 7): the topic, person or product.',
-    'Use his abbreviations and brand names as written; Title Case otherwise.',
-    'Name what the thread is about NOW, from the latest messages.',
+    'These are only his messages. Name the goal he is steering the thread towards,',
+    'not a detail from one message. The first messages are context; name what the',
+    'latest messages are steering towards, since names follow the conversation.',
+    'Build the name from words he actually used (his abbreviations and brand names',
+    'as written), not words of your own. Title Case otherwise.',
+    'He dictates, so a word may be a sound-alike (e.g. "SOUL" for "SOL"); never',
+    'build the name on one odd word.',
     'Reply with the name only: no quotes, no explanation.',
     '',
-    `Current name: ${current}`,
-    '',
-    'Recent messages, oldest first:',
-    messages.map(m => `- ${m.replace(/\s+/g, ' ').trim().slice(0, 300)}`).join('\n'),
+    'His messages, oldest first (the last five carry the most weight):',
+    messages
+      .map((m, i) => `${i >= messages.length - 5 ? '- LATEST: ' : '- '}${m.replace(/\s+/g, ' ').trim().slice(0, 300)}`)
+      .join('\n'),
   ].join('\n')
 
   try {
@@ -119,7 +152,7 @@ export async function renameFromSuggestion(
 ): Promise<string | null> {
   const ch = await client.channels.fetch(threadId)
   if (!ch?.isThread()) return null
-  const name = await suggest(ch.name, repo.recentMessages(threadId, RECENT_MESSAGES))
+  const name = await suggest(ch.name, messagesForTitle(repo, threadId))
   if (!name) return null
   return applyName(client, repo, threadId, name)
 }
@@ -148,7 +181,7 @@ export async function autoName(
       repo.setThreadNamed(threadId, ch.name, done)
       return
     }
-    const name = await suggest(ch.name, repo.recentMessages(threadId, RECENT_MESSAGES))
+    const name = await suggest(ch.name, messagesForTitle(repo, threadId))
     if (name && name.toLowerCase() !== ch.name.toLowerCase()) {
       await applyName(client, repo, threadId, name)
     } else {
