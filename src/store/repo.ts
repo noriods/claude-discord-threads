@@ -20,7 +20,7 @@ export class Repo {
       .get(threadId)
   }
 
-  createThread(row: Omit<ThreadRow, 'created_at' | 'last_active_at'>): ThreadRow {
+  createThread(row: Omit<ThreadRow, 'created_at' | 'last_active_at' | 'named_turns'>): ThreadRow {
     const now = Date.now()
     this.db.run(
       `INSERT INTO threads
@@ -62,6 +62,15 @@ export class Repo {
 
   setThreadTitle(threadId: string, title: string): void {
     this.db.run('UPDATE threads SET title = ? WHERE thread_id = ?', [title, threadId])
+  }
+
+  /** Record a thread's name and how many turns were done when it was given. */
+  setThreadNamed(threadId: string, title: string, namedTurns: number): void {
+    this.db.run('UPDATE threads SET title = ?, named_turns = ? WHERE thread_id = ?', [
+      title,
+      namedTurns,
+      threadId,
+    ])
   }
 
   setThreadCwd(threadId: string, cwd: string): void {
@@ -163,6 +172,17 @@ export class Repo {
       else out.open += r.c
     }
     return out
+  }
+
+  /** The thread's last `limit` user messages, oldest first. */
+  recentMessages(threadId: string, limit: number): string[] {
+    return this.db
+      .query<{ content: string }, [string, number]>(
+        'SELECT content FROM turns WHERE thread_id = ? ORDER BY id DESC LIMIT ?',
+      )
+      .all(threadId, limit)
+      .map(r => r.content)
+      .reverse()
   }
 
   /**
