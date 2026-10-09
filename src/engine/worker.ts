@@ -18,6 +18,7 @@ import { query, type Options, type SDKMessage, type SDKUserMessage } from '@anth
 import type { Responder, ResponderResult, TurnContext } from './delivery'
 import { log } from '../log'
 import { assertAttachable } from '../discord/util'
+import { expandCommand } from '../discord/commands'
 
 /** Retry ceiling when Discord gives us no better hint. */
 const DEFAULT_RETRY_MS = 60_000
@@ -190,7 +191,7 @@ class Inbox {
   private closed = false
 
   push(content: string, priority?: SDKUserMessage['priority']): void {
-    this.queue.push({ content, priority })
+    this.queue.push({ content: expandCommand(content), priority })
     this.wake?.()
   }
 

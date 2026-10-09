@@ -14,7 +14,7 @@ import { join } from 'path'
 import type { Client } from 'discord.js'
 import { openDb } from '../src/store/db'
 import { Repo } from '../src/store/repo'
-import { handleCommand } from '../src/discord/commands'
+import { handleCommand, expandCommand, RECAP_PROMPT } from '../src/discord/commands'
 import { keepThreadsOpen } from '../src/discord/threads'
 import { consume, describeCompaction } from '../src/engine/worker'
 
@@ -337,9 +337,17 @@ describe('/compact', () => {
 })
 
 describe('/recap', () => {
-  test('falls through, because Claude Code handles it natively', async () => {
+  test('falls through to the model', async () => {
     const { ctx } = setup()
     expect((await handleCommand('/recap', ctx)).handled).toBe(false)
+  })
+
+  test('the model gets the started / done / stands / next prompt', () => {
+    expect(expandCommand('/recap')).toBe(RECAP_PROMPT)
+    expect(expandCommand(' /Recap ')).toBe(RECAP_PROMPT)
+    expect(RECAP_PROMPT).toContain('Started with')
+    expect(expandCommand('/recap the ads part')).toBe('/recap the ads part')
+    expect(expandCommand('what did we recap?')).toBe('what did we recap?')
   })
 })
 

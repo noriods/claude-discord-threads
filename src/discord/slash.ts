@@ -67,7 +67,7 @@ export const SLASH_COMMANDS: CommandSpec[] = [
   },
   { name: 'threads', description: 'List every open thread' },
   { name: 'compact', description: 'Summarise this conversation to free up context (costs tokens)' },
-  { name: 'recap', description: 'Where this thread stands and what comes next (costs tokens)' },
+  { name: 'recap', description: 'How this thread started, what got done, where it stands (costs tokens)' },
 ]
 
 function toPayload(spec: CommandSpec) {
@@ -155,7 +155,8 @@ async function handle(
   )
   const text = `/${interaction.commandName}${arg ? ` ${arg}` : ''}`
 
-  // /compact and /recap are executed by Claude Code itself, so they have to
+  // /compact is executed by Claude Code itself and /recap by the model (see
+  // expandCommand), so they have to
   // become real turns rather than daemon answers. The result lands in the
   // thread as usual.
   if (interaction.commandName === 'compact' || interaction.commandName === 'recap') {
