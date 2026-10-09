@@ -175,6 +175,15 @@ export class Repo {
   }
 
   /** The thread's last `limit` user messages, oldest first. */
+  openingMessages(threadId: string, limit: number): string[] {
+    return this.db
+      .query<{ content: string }, [string, number]>(
+        'SELECT content FROM turns WHERE thread_id = ? ORDER BY id ASC LIMIT ?',
+      )
+      .all(threadId, limit)
+      .map(r => r.content)
+  }
+
   recentMessages(threadId: string, limit: number): string[] {
     return this.db
       .query<{ content: string }, [string, number]>(
