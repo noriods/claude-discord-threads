@@ -44,6 +44,8 @@ export type ThreadRow = {
   permission_mode: string | null
   /** The header message announcing this thread's model, so it can be edited. */
   header_message_id: string | null
+  /** Done turns when the thread was last named, by us or by hand; null = never. */
+  named_turns: number | null
   created_at: number
   last_active_at: number
 }
@@ -82,6 +84,7 @@ CREATE TABLE IF NOT EXISTS threads (
   model           TEXT,
   permission_mode TEXT,
   header_message_id TEXT,
+  named_turns     INTEGER,
   created_at      INTEGER NOT NULL,
   last_active_at  INTEGER NOT NULL
 );
@@ -159,6 +162,7 @@ function migrate(db: Database): void {
     ['threads', 'model', 'TEXT'],
     ['threads', 'permission_mode', 'TEXT'],
     ['threads', 'header_message_id', 'TEXT'],
+    ['threads', 'named_turns', 'INTEGER'],
     ['turns', 'cost_usd', 'REAL'],
     ['turns', 'input_tokens', 'INTEGER'],
     ['turns', 'output_tokens', 'INTEGER'],

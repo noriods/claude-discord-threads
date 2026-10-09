@@ -34,6 +34,7 @@ import { StatusLine } from './discord/status'
 import { Delivery, type Responder, type TurnContext } from './engine/delivery'
 import { acquireSingleInstanceLock } from './lock'
 import { echoResponder } from './engine/echo'
+import { autoName } from './engine/titler'
 
 loadEnvFile()
 
@@ -224,6 +225,7 @@ async function handleInbound(msg: Message): Promise<void> {
       signals.stopTyping(convo.id)
       await status.close()
       await titleThread(convo.id, msg.content)
+      await autoName(client, repo, convo.id)
     })
 }
 
@@ -239,6 +241,18 @@ async function titleThread(conversationId: string, seed: string): Promise<void> 
     repo.setThreadTitle(conversationId, seed.slice(0, 200))
   } catch {
     // Renaming needs MANAGE_THREADS unless we own the thread. Cosmetic.
+  }
+}
+
+/**
+ * Give every open thread a short name once, after an upgrade. One at a time
+ * and spaced out: each one is a model call and a Discord rename.
+ */
+async function backfillThreadNames(): Promise<void> {
+  for (const thread of repo.openThreads()) {
+    if (thread.guild_id === null || thread.named_turns !== null) continue
+    await autoName(client, repo, thread.thread_id)
+    await new Promise(resolve => setTimeout(resolve, 2_000))
   }
 }
 
@@ -402,6 +416,7 @@ client.once('clientReady', async c => {
     unrecoverable: recovered.dropped,
     fromBacklog: replayed,
   })
+  void backfillThreadNames()
 })
 
 let shuttingDown = false
