@@ -11,7 +11,7 @@ import type { Client } from 'discord.js'
 import { openDb } from '../src/store/db'
 import { Repo } from '../src/store/repo'
 import { handleCommand } from '../src/discord/commands'
-import { autoName, parseTitle } from '../src/engine/titler'
+import { autoName, parseTitle, ownWords, messagesForTitle } from '../src/engine/titler'
 import { threadName } from '../src/discord/util'
 
 function setup(opts: { name?: string; title?: string | null; doneTurns?: number } = {}) {
@@ -170,5 +170,29 @@ describe('/rename', () => {
     const out = await handleCommand('/rename', { ...ctxOf(s), suggestTitle: async () => null })
     expect(out.handled && out.reply).toContain('/rename <name>')
     expect(s.renames).toEqual([])
+  })
+})
+
+describe('his words only', () => {
+  test('drops the quoted bot reply and links, keeps what he typed', () => {
+    const msg = 'Replying to ClaudePip:\n> Post it **today at 14:00 SAST**.\n> I don\'t have a proven best hour.\nRewrite it up to 22 times https://x.com/a/status/1'
+    expect(ownWords(msg)).toBe('Rewrite it up to 22 times')
+  })
+
+  test('a message that is only a quote leaves nothing', () => {
+    expect(ownWords('Replying to ClaudePip: > Post it today at 14:00')).toBe('')
+  })
+
+  test('opening messages always count, alongside the latest ones', () => {
+    const { repo } = setup({ doneTurns: 0 })
+    const contents = ['Use this for our X marketing', ...Array.from({ length: 20 }, (_, i) => `later ${i}`)]
+    contents.forEach((content, i) => {
+      const t = repo.enqueueTurn({ threadId: 'thread-1', inboundMessageId: `x${i}`, authorId: 'u', content })!
+      repo.finishTurn(t.id, [`rx${i}`])
+    })
+    const msgs = messagesForTitle(repo, 'thread-1')
+    expect(msgs[0]).toBe('Use this for our X marketing')
+    expect(msgs.at(-1)).toBe('later 19')
+    expect(msgs).not.toContain('later 5')
   })
 })
