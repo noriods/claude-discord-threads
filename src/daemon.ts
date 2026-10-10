@@ -226,7 +226,15 @@ async function handleInbound(msg: Message): Promise<void> {
   // Attachments are downloaded here rather than exposed as a tool: workers get
   // no Discord tools at all, so this is the only path by which an image or a
   // log file reaches the model.
-  const content = await composeTurnContent(msg)
+  let content = await composeTurnContent(msg)
+
+  // A thread someone else opened (the #maps project threads): quote its first
+  // message so the model knows the topic, and never rename it.
+  if (!existing && !convo.created && msg.channel.isThread()) {
+    repo.setThreadNamed(convo.id, msg.channel.name, Number.MAX_SAFE_INTEGER)
+    const starter = await msg.channel.fetchStarterMessage().catch(() => null)
+    if (starter?.content) content = `This thread opens with:\n${starter.content.replace(/^/gm, '> ')}\n\n${content}`
+  }
 
   const turn = repo.enqueueTurn({
     threadId: convo.id,
