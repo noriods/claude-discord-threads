@@ -210,7 +210,7 @@ async function rename(ctx: CommandContext, arg: string): Promise<string> {
   if (thread.guild_id === null) return 'This is a DM, so there is no thread to rename.'
   try {
     const name = arg
-      ? await applyName(ctx.client, ctx.repo, ctx.conversationId, arg)
+      ? await applyName(ctx.client, ctx.repo, ctx.conversationId, arg, true)
       : await renameFromSuggestion(ctx.client, ctx.repo, ctx.conversationId, ctx.suggestTitle)
     if (name) return `Renamed to **${name}**.`
     return arg
