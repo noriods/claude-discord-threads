@@ -137,12 +137,13 @@ export async function applyName(
   repo: Repo,
   threadId: string,
   name: string,
+  byHand = false,
 ): Promise<string | null> {
   const ch = await client.channels.fetch(threadId)
   if (!ch?.isThread()) return null
   const title = threadName(name)
   if (ch.name !== title) await ch.setName(title)
-  repo.setThreadNamed(threadId, title, repo.turnCount(threadId).done)
+  repo.setThreadNamed(threadId, title, repo.turnCount(threadId).done, byHand)
   return title
 }
 
@@ -163,7 +164,7 @@ export async function renameFromSuggestion(
 /**
  * Rename a thread if it is due: never named by this logic, or six done turns
  * since it last was. A name that is neither ours nor the opening message was
- * typed by the owner, so it is recorded and kept.
+ * typed by the owner, so it is recorded and kept for good.
  */
 export async function autoName(
   client: Client,
@@ -172,7 +173,7 @@ export async function autoName(
   suggest: Suggest = suggestTitle,
 ): Promise<void> {
   const thread = repo.getThread(threadId)
-  if (!thread || thread.guild_id === null || thread.state !== 'open') return
+  if (!thread || thread.guild_id === null || thread.state !== 'open' || thread.hand_named) return
   const done = repo.turnCount(threadId).done
   if (done === 0) return
   if (thread.named_turns !== null && done - thread.named_turns < RENAME_EVERY_TURNS) return
@@ -181,7 +182,7 @@ export async function autoName(
     const ch = await client.channels.fetch(threadId)
     if (!ch?.isThread()) return
     if (thread.title !== null && ch.name !== thread.title && ch.name !== threadName(thread.title)) {
-      repo.setThreadNamed(threadId, ch.name, done)
+      repo.setThreadNamed(threadId, ch.name, done, true)
       return
     }
     const name = await suggest(ch.name, messagesForTitle(repo, threadId))
