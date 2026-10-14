@@ -20,7 +20,7 @@ export class Repo {
       .get(threadId)
   }
 
-  createThread(row: Omit<ThreadRow, 'created_at' | 'last_active_at' | 'named_turns'>): ThreadRow {
+  createThread(row: Omit<ThreadRow, 'created_at' | 'last_active_at' | 'named_turns' | 'hand_named'>): ThreadRow {
     const now = Date.now()
     this.db.run(
       `INSERT INTO threads
@@ -65,10 +65,11 @@ export class Repo {
   }
 
   /** Record a thread's name and how many turns were done when it was given. */
-  setThreadNamed(threadId: string, title: string, namedTurns: number): void {
-    this.db.run('UPDATE threads SET title = ?, named_turns = ? WHERE thread_id = ?', [
+  setThreadNamed(threadId: string, title: string, namedTurns: number, byHand = false): void {
+    this.db.run('UPDATE threads SET title = ?, named_turns = ?, hand_named = ? WHERE thread_id = ?', [
       title,
       namedTurns,
+      byHand ? 1 : 0,
       threadId,
     ])
   }

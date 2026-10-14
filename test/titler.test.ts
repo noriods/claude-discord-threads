@@ -110,6 +110,14 @@ describe('autoName', () => {
     expect(repo.getThread('thread-1')).toMatchObject({ title: 'Royalties', named_turns: 1 })
   })
 
+  test('keeps a hand name after later turns too', async () => {
+    const { repo, client, renames, suggest, addTurns } = setup({ name: 'Royalties' })
+    await autoName(client, repo, 'thread-1', suggest)
+    addTurns(12)
+    await autoName(client, repo, 'thread-1', suggest)
+    expect(renames).toEqual([])
+  })
+
   test('only our own truncation of the opening message counts as ours', async () => {
     const long = 'please '.repeat(30).trim()
     const { repo, client, renames, suggest } = setup({ title: long, name: long.slice(0, 80) })
@@ -160,6 +168,14 @@ describe('/rename', () => {
     expect(s.renames).toEqual(['Pip Guides'])
     expect(s.repo.getThread('thread-1')).toMatchObject({ title: 'Pip Guides', named_turns: 3 })
     expect(s.asked).toHaveLength(0)
+  })
+
+  test('a name given with /rename is never replaced automatically', async () => {
+    const s = setup({ doneTurns: 3 })
+    await handleCommand('/rename Claude executive officer', ctxOf(s))
+    s.addTurns(12)
+    await autoName(s.client, s.repo, 'thread-1', s.suggest)
+    expect(s.renames).toEqual(['Claude executive officer'])
   })
 
   test('without a name, applies a suggestion', async () => {
