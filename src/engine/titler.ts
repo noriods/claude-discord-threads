@@ -192,6 +192,11 @@ export async function autoName(
       repo.setThreadNamed(threadId, ch.name, done)
     }
   } catch (err) {
+    // The thread was deleted on Discord: stop tracking it as open.
+    if ((err as { code?: number }).code === 10003) {
+      repo.archiveThread(threadId)
+      return
+    }
     // Renaming needs MANAGE_THREADS unless we own the thread, and Discord
     // allows two renames per thread per ten minutes.
     log.warn('auto naming failed', { thread: threadId, error: describeError(err) })
