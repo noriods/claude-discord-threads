@@ -433,6 +433,6 @@ test('usageFooter shows the 5h and weekly reading, nothing without one', async (
     five_hour: { utilization: 41.6, resets_at: '2026-10-22T20:49:59+00:00' },
     seven_day: { utilization: 36, resets_at: '2026-10-24T18:59:59+00:00' },
   }))
-  expect(usageFooter(p)).toBe('\n-# 5h 42% (resets 22:49) · week 36% (resets Sat 20:59)')
+  expect(usageFooter(p)).toBe('\n-# ⏱ ▰▰▰▰▱▱▱▱▱▱ 42% · 📅 ▰▰▰▰▱▱▱▱▱▱ 36%')
   expect(usageFooter('/nope')).toBe('')
 })

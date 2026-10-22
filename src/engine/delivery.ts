@@ -29,11 +29,11 @@ import { homedir } from 'node:os'
 export function usageFooter(path = `${homedir()}/.cache/claude-usage.json`): string {
   try {
     const d = JSON.parse(readFileSync(path, 'utf8'))
-    const at = (iso: string, opts: Intl.DateTimeFormatOptions) =>
-      new Date(iso).toLocaleString('en-GB', { timeZone: 'Africa/Johannesburg', ...opts })
-    const s = d.five_hour, w = d.seven_day
-    return `\n-# 5h ${Math.round(s.utilization)}% (resets ${at(s.resets_at, { hour: '2-digit', minute: '2-digit' })})` +
-      ` · week ${Math.round(w.utilization)}% (resets ${at(w.resets_at, { weekday: 'short', hour: '2-digit', minute: '2-digit' })})`
+    const bar = (pct: number) => {
+      const n = Math.min(10, Math.max(0, Math.round(pct / 10)))
+      return `${'▰'.repeat(n)}${'▱'.repeat(10 - n)} ${Math.round(pct)}%`
+    }
+    return `\n-# ⏱ ${bar(d.five_hour.utilization)} · 📅 ${bar(d.seven_day.utilization)}`
   } catch {
     return ''
   }
