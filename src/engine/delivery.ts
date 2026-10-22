@@ -19,6 +19,25 @@ import type { TurnRow } from '../store/db'
 import type { Signals } from '../discord/signals'
 import { sendReply } from '../discord/threads'
 import { MAX_LIVE_WORKERS, steerEnabled } from '../config'
+import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+
+/**
+ * Plan usage under every model reply (Norio 22 Oct 2026). Reads the reading
+ * the claude-budget-gate hook refreshes on each prompt; no reading, no footer.
+ */
+export function usageFooter(path = `${homedir()}/.cache/claude-usage.json`): string {
+  try {
+    const d = JSON.parse(readFileSync(path, 'utf8'))
+    const at = (iso: string, opts: Intl.DateTimeFormatOptions) =>
+      new Date(iso).toLocaleString('en-GB', { timeZone: 'Africa/Johannesburg', ...opts })
+    const s = d.five_hour, w = d.seven_day
+    return `\n-# 5h ${Math.round(s.utilization)}% (resets ${at(s.resets_at, { hour: '2-digit', minute: '2-digit' })})` +
+      ` · week ${Math.round(w.utilization)}% (resets ${at(w.resets_at, { weekday: 'short', hour: '2-digit', minute: '2-digit' })})`
+  } catch {
+    return ''
+  }
+}
 
 /** How many restarts a single turn may be replayed across before it is dropped. */
 const MAX_REPLAY_ATTEMPTS = 3
@@ -66,6 +85,8 @@ export type DeliveryDeps = {
   /** Resolve where to post, and how the conversation is configured. */
   resolveTarget: (conversationId: string) => Promise<SendableChannels>
   chunkLimit?: number
+  /** Appended to every model reply (not to errors or status lines). */
+  footer?: () => string
   chunkMode?: 'length' | 'newline'
 }
 
@@ -146,7 +167,7 @@ export class Delivery {
       if (msg) void signals.working(msg)
 
       const onLateReply = (text: string, files?: string[]) =>
-        this.post(ctx, text, files).then(
+        this.post(ctx, text + (this.deps.footer?.() ?? ''), files).then(
           () => {},
           err => void process.stderr.write(`discord-threads: late reply for turn ${ctx.turn.id} failed: ${err}\n`),
         )
@@ -176,7 +197,7 @@ export class Delivery {
       // "check whether it actually went out".
       repo.setTurnState(ctx.turn.id, 'delivering')
 
-      const ids = await this.post(ctx, result.text, result.files)
+      const ids = await this.post(ctx, result.text + (this.deps.footer?.() ?? ''), result.files)
       if (ids.length === 0) {
         repo.failTurn(ctx.turn.id, 'reply produced no Discord message')
         if (msg) await signals.settled(msg, false)

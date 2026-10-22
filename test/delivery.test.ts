@@ -424,3 +424,15 @@ describe('steering', () => {
     expect(repo.getTurn(b.id)!.state).toBe('done')
   })
 })
+
+test('usageFooter shows the 5h and weekly reading, nothing without one', async () => {
+  const { usageFooter } = await import('../src/engine/delivery')
+  const { writeFileSync, mkdtempSync } = await import('node:fs')
+  const p = `${mkdtempSync('/tmp/uf-')}/u.json`
+  writeFileSync(p, JSON.stringify({
+    five_hour: { utilization: 41.6, resets_at: '2026-10-22T20:49:59+00:00' },
+    seven_day: { utilization: 36, resets_at: '2026-10-24T18:59:59+00:00' },
+  }))
+  expect(usageFooter(p)).toBe('\n-# 5h 42% (resets 22:49) · week 36% (resets Sat 20:59)')
+  expect(usageFooter('/nope')).toBe('')
+})
