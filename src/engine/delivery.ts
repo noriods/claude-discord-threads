@@ -29,11 +29,20 @@ import { homedir } from 'node:os'
 export function usageFooter(path = `${homedir()}/.cache/claude-usage.json`): string {
   try {
     const d = JSON.parse(readFileSync(path, 'utf8'))
-    const bar = (pct: number) => {
-      const n = Math.min(10, Math.max(0, Math.round(pct / 10)))
-      return `${'▰'.repeat(n)}${'▱'.repeat(10 - n)} ${Math.round(pct)}%`
+    // From 70% the reset time shows too, in SAST (Norio 23 Oct 2026).
+    const tz = 'Africa/Johannesburg'
+    const day = (t: Date) => t.toLocaleDateString('en-GB', { timeZone: tz, weekday: 'short' })
+    const when = (iso: string) => {
+      const t = new Date(iso)
+      const hm = t.toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' })
+      return t.getTime() - Date.now() < 86_400_000 && day(t) === day(new Date()) ? hm : `${day(t)} ${hm}`
     }
-    return `\n-# ⏱ ${bar(d.five_hour.utilization)} · 📅 ${bar(d.seven_day.utilization)}`
+    const bar = (w: { utilization: number; resets_at?: string | null }) => {
+      const n = Math.min(10, Math.max(0, Math.round(w.utilization / 10)))
+      const reset = w.utilization >= 70 && w.resets_at ? ` ↻ ${when(w.resets_at)}` : ''
+      return `${'▰'.repeat(n)}${'▱'.repeat(10 - n)} ${Math.round(w.utilization)}%${reset}`
+    }
+    return `\n-# ⏱ ${bar(d.five_hour)} · 📅 ${bar(d.seven_day)}`
   } catch {
     return ''
   }

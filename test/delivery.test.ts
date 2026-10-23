@@ -436,3 +436,17 @@ test('usageFooter shows the 5h and weekly reading, nothing without one', async (
   expect(usageFooter(p)).toBe('\n-# ⏱ ▰▰▰▰▱▱▱▱▱▱ 42% · 📅 ▰▰▰▰▱▱▱▱▱▱ 36%')
   expect(usageFooter('/nope')).toBe('')
 })
+
+test('usageFooter adds the SAST reset time from 70%', async () => {
+  const { usageFooter } = await import('../src/engine/delivery')
+  const { setSystemTime } = await import('bun:test')
+  const { writeFileSync, mkdtempSync } = await import('node:fs')
+  const p = `${mkdtempSync('/tmp/uf-')}/u.json`
+  writeFileSync(p, JSON.stringify({
+    five_hour: { utilization: 70, resets_at: '2026-10-23T16:49:59+00:00' },
+    seven_day: { utilization: 91, resets_at: '2026-10-24T18:59:59+00:00' },
+  }))
+  setSystemTime(new Date('2026-10-23T14:30:00Z'))
+  expect(usageFooter(p)).toBe('\n-# ⏱ ▰▰▰▰▰▰▰▱▱▱ 70% ↻ 18:49 · 📅 ▰▰▰▰▰▰▰▰▰▱ 91% ↻ Sat 20:59')
+  setSystemTime()
+})
