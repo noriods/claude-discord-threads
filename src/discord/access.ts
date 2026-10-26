@@ -42,6 +42,8 @@ export type Access = {
   ackReaction?: string
   textChunkLimit?: number
   chunkMode?: 'length' | 'newline'
+  /** Authors (users or webhooks) whose messages may be quoted when an allowlisted user replies to them. */
+  trustedAuthors?: string[]
 }
 
 export function defaultAccess(): Access {
@@ -60,6 +62,7 @@ export function loadAccess(): Access {
       ackReaction: parsed.ackReaction,
       textChunkLimit: parsed.textChunkLimit,
       chunkMode: parsed.chunkMode,
+      trustedAuthors: parsed.trustedAuthors,
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()

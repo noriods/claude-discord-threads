@@ -37,6 +37,8 @@ const MAX_INLINE_IMAGE_BYTES = 5 * 1024 * 1024
 export type TurnContent = {
   text: string
   images: InlineImage[]
+  /** The replied-to message whose text was left out, so the caller can offer to trust its author. */
+  untrusted?: Message
 }
 
 /**
@@ -45,8 +47,10 @@ export type TurnContent = {
  * that same message still belong to the turn.
  */
 export async function composeTurnContent(msg: Message, overrideText?: string): Promise<TurnContent> {
-  const text = (await quotedReply(msg)) + (overrideText ?? msg.content).trim()
-  if (msg.attachments.size === 0) return { text, images: [] }
+  const reply = await quotedReply(msg)
+  const text = reply.prefix + (overrideText ?? msg.content).trim()
+  const untrusted = reply.untrusted
+  if (msg.attachments.size === 0) return { text, images: [], untrusted }
 
   const attachments = [...msg.attachments.values()].slice(0, MAX_ATTACHMENTS)
   const lines: string[] = []
@@ -86,25 +90,37 @@ export async function composeTurnContent(msg: Message, overrideText?: string): P
       ...lines,
     ].join('\n'),
     images,
+    untrusted,
   }
 }
 
 /**
  * A Discord reply carries only a pointer to the message it quotes, so without
  * this the model sees "yes, do that" with no idea what "that" is. Only the
- * bot's own messages and allowlisted authors are quoted: anyone else's text
- * would be a prompt-injection path into a worker the allowlist keeps them out of.
+ * bot's own messages, allowlisted authors and authors an allowlisted user chose
+ * to trust (trust.ts) are quoted: anyone else's text would be a prompt-injection
+ * path into a worker the allowlist keeps them out of.
  */
-async function quotedReply(msg: Message): Promise<string> {
-  if (!msg.reference?.messageId) return ''
+async function quotedReply(msg: Message): Promise<{ prefix: string; untrusted?: Message }> {
+  if (!msg.reference?.messageId) return { prefix: '' }
   try {
     const ref = await msg.fetchReference()
-    const trusted = ref.author.id === msg.client.user?.id || isAllowedSender(loadAccess(), msg, ref.author.id)
-    if (!trusted) return `Replying to a message from ${ref.author.username} (not on the allowlist, text left out)\n\n`
-    const quoted = ref.content.trim() || '(no text)'
-    return `Replying to ${ref.author.username}:\n${quoted.replace(/^/gm, '> ')}\n\n`
+    const access = loadAccess()
+    const trusted =
+      ref.author.id === msg.client.user?.id ||
+      isAllowedSender(access, msg, ref.author.id) ||
+      !!access.trustedAuthors?.includes(ref.author.id)
+    if (!trusted) {
+      return { prefix: `Replying to a message from ${ref.author.username} (not on the allowlist, text left out)\n\n`, untrusted: ref }
+    }
+    return { prefix: quoteMessage(ref) }
   } catch (err) {
     log.warn('reply reference fetch failed', { error: describeError(err) })
-    return ''
+    return { prefix: '' }
   }
+}
+
+export function quoteMessage(ref: Message): string {
+  const quoted = ref.content.trim() || '(no text)'
+  return `Replying to ${ref.author.username}:\n${quoted.replace(/^/gm, '> ')}\n\n`
 }

@@ -65,6 +65,17 @@ describe('replies', () => {
     expect(out.text).toBe('Replying to a message from mallory (not on the allowlist, text left out)\n\n?')
   })
 
+  test('a stranger is offered for trust, then quoted once trusted', async () => {
+    const alert = from('7', 'Alerts', 'dekonox.rs is down')
+    const before = await composeTurnContent(reply('Clean it', alert))
+    expect(before.text).toBe('Replying to a message from Alerts (not on the allowlist, text left out)\n\nClean it')
+    expect(before.untrusted?.author.id).toBe('7')
+    writeFileSync(ACCESS_FILE, JSON.stringify({ dmPolicy: 'allowlist', allowFrom: [OWNER], groups: {}, pending: {}, trustedAuthors: ['7'] }))
+    const after = await composeTurnContent(reply('Clean it', alert))
+    expect(after.text).toBe('Replying to Alerts:\n> dekonox.rs is down\n\nClean it')
+    expect(after.untrusted).toBeUndefined()
+  })
+
   test('a deleted original does not drop the reply', async () => {
     const out = await composeTurnContent(reply('yes', async () => { throw new Error('Unknown Message') }))
     expect(out.text).toBe('yes')
