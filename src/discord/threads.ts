@@ -62,6 +62,11 @@ export async function resolveConversation(msg: Message, repo: Repo): Promise<Con
     }
   }
 
+  // Already has one: a held message re-run after its Trust / No tap (trust.ts).
+  if (msg.hasThread && msg.thread) {
+    return { id: msg.thread.id, channelId: msg.channelId, guildId: msg.guildId, isDM: false, created: false }
+  }
+
   try {
     const thread = await msg.startThread({
       name: threadName(msg.content),
