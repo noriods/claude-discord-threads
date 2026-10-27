@@ -166,7 +166,8 @@ async function startTurnOnMessage(
   await enqueueSyntheticTurn(convo.id, content, userId)
 }
 
-async function handleInbound(msg: Message): Promise<void> {
+/** `trustAnswered`: the Trust / No prompt for this message's reply was tapped, so go ahead either way. */
+async function handleInbound(msg: Message, trustAnswered = false): Promise<void> {
   const result = await gate(client, msg)
   if (result.action === 'drop') return
 
@@ -278,6 +279,15 @@ async function handleInbound(msg: Message): Promise<void> {
     if (starter?.content) content = `This thread opens with:\n${starter.content.replace(/^/gm, '> ')}\n\n${content}`
   }
 
+  // Hold the message until the Trust / No prompt is tapped; the button handler
+  // re-runs it then, quoted or not. Otherwise the reply lands before the tap.
+  if (untrusted && !trustAnswered) {
+    repo.setWatermark(convo.channelId, msg.id)
+    await askToTrust(client, convo.id, untrusted, msg)
+    await signals.settled(msg, true)
+    return
+  }
+
   const turn = repo.enqueueTurn({
     threadId: convo.id,
     inboundMessageId: msg.id,
@@ -288,11 +298,6 @@ async function handleInbound(msg: Message): Promise<void> {
   repo.setWatermark(convo.channelId, msg.id)
   // Already held: a gateway redelivery or a backlog replay raced us.
   if (!turn) return
-  if (untrusted) {
-    askToTrust(client, convo.id, untrusted).catch(err =>
-      log.warn('could not post trust prompt', { thread: convo.id, error: describeError(err) }),
-    )
-  }
 
   signals.startTyping(convo.id, () => sendTyping(convo.id))
   const status = new StatusLine(client, convo.id)
@@ -570,7 +575,7 @@ client.once('clientReady', async c => {
   attachCommandButtons(client, userId => loadAccess().allowFrom.includes(userId))
   attachTrustHandler(client, {
     isAllowedUser: userId => loadAccess().allowFrom.includes(userId),
-    enqueueTurn: enqueueSyntheticTurn,
+    resume: msg => handleInbound(msg, true),
   })
   await registerGuildCommands(client, await guildIdsForOptedInChannels())
   void keepThreadsOpen(client, repo)
