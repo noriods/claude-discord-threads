@@ -499,3 +499,10 @@ test('usageFooter adds the SAST reset time from 70%', async () => {
   expect(usageFooter(p)).toBe('\n-# ⏱ ▰▰▰▰▰▰▰▱▱▱ 70% ↻ 18:49 · 📅 ▰▰▰▰▰▰▰▰▰▱ 91% ↻ Sat 20:59')
   setSystemTime()
 })
+
+test('contextNote shows the thread size from 150k only', async () => {
+  const { contextNote } = await import('../src/engine/delivery')
+  expect(contextNote(undefined)).toBe('')
+  expect(contextNote(149_999)).toBe('')
+  expect(contextNote(182_400)).toBe(' · 🧵 182k context riding along')
+})

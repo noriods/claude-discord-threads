@@ -275,6 +275,7 @@ async function pump(
   let taskNames: string[] = []
   let sessionId: string | undefined
   let compaction: Compaction | undefined
+  let contextTokens: number | undefined
 
   const settle = (result: ResponderResult) => {
     const waiter = session.waiter
@@ -304,9 +305,13 @@ async function pump(
       if (outcome.assistantText) lastText = outcome.assistantText
       if (outcome.sessionId) sessionId = outcome.sessionId
       if (outcome.compaction) compaction = outcome.compaction
+      if (outcome.contextTokens) contextTokens = outcome.contextTokens
       if (!outcome.result) continue
 
-      const result = outcome.result
+      const result =
+        outcome.result.kind === 'reply' && contextTokens
+          ? { ...outcome.result, usage: { ...outcome.result.usage, contextTokens } }
+          : outcome.result
       // A command that succeeded silently is not a failure.
       if (result.kind === 'error' && compaction) {
         settle({ kind: 'reply', text: describeCompaction(compaction), sessionId })
@@ -358,6 +363,8 @@ type Consumed = {
   compaction?: Compaction
   /** Text of an assistant message, kept in case the final result is empty. */
   assistantText?: string
+  /** Tokens the last assistant call carried in: the thread's live context size. */
+  contextTokens?: number
   result?: ResponderResult
 }
 
@@ -408,7 +415,11 @@ export function consume(message: SDKMessage, ctx: TurnContext, lastText = ''): C
       }
     }
     const assistantText = texts.join('\n').trim()
-    return assistantText ? { assistantText } : {}
+    const u = message.message.usage
+    const contextTokens = u
+      ? (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
+      : undefined
+    return { ...(assistantText ? { assistantText } : {}), ...(contextTokens ? { contextTokens } : {}) }
   }
 
   if (message.type !== 'result') return {}

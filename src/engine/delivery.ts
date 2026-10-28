@@ -26,6 +26,15 @@ import { homedir } from 'node:os'
  * Plan usage under every model reply (Norio 22 Oct 2026). Reads the reading
  * the claude-budget-gate hook refreshes on each prompt; no reading, no footer.
  */
+/**
+ * Thread size once it is big enough to matter (Norio 28 Oct 2026): every tool
+ * call re-reads the whole thread, so a new topic belongs in a new thread.
+ */
+export const CONTEXT_NOTE_FROM = 150_000
+export function contextNote(tokens?: number): string {
+  return tokens && tokens >= CONTEXT_NOTE_FROM ? ` · 🧵 ${Math.round(tokens / 1000)}k context riding along` : ''
+}
+
 export function usageFooter(path = `${homedir()}/.cache/claude-usage.json`): string {
   try {
     const d = JSON.parse(readFileSync(path, 'utf8'))
@@ -76,7 +85,7 @@ export type ResponderResult =
       sessionId?: string
       files?: string[]
       title?: string
-      usage?: { costUsd?: number; inputTokens?: number; outputTokens?: number; durationMs?: number }
+      usage?: { costUsd?: number; inputTokens?: number; outputTokens?: number; durationMs?: number; contextTokens?: number }
     }
   /** Transient — the turn goes back on the queue rather than failing. */
   | { kind: 'retry'; afterMs: number; reason: string }
@@ -95,7 +104,7 @@ export type DeliveryDeps = {
   resolveTarget: (conversationId: string) => Promise<SendableChannels>
   chunkLimit?: number
   /** Appended to every model reply (not to errors or status lines). */
-  footer?: () => string
+  footer?: (contextTokens?: number) => string
   chunkMode?: 'length' | 'newline'
 }
 
@@ -210,7 +219,7 @@ export class Delivery {
       // "check whether it actually went out".
       repo.setTurnState(ctx.turn.id, 'delivering')
 
-      const ids = await this.post(ctx, result.text + (this.deps.footer?.() ?? ''), result.files)
+      const ids = await this.post(ctx, result.text + (this.deps.footer?.(result.usage?.contextTokens) ?? ''), result.files)
       if (ids.length === 0) {
         repo.failTurn(ctx.turn.id, 'reply produced no Discord message')
         if (msg) await signals.settled(msg, false)

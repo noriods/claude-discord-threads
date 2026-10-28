@@ -36,7 +36,7 @@ import { composeTurnContent } from './discord/inbound'
 import { threadName } from './discord/util'
 import { log, describeError } from './log'
 import { StatusLine } from './discord/status'
-import { Delivery, usageFooter, type Responder, type TurnContext } from './engine/delivery'
+import { Delivery, usageFooter, contextNote, type Responder, type TurnContext } from './engine/delivery'
 import { acquireSingleInstanceLock } from './lock'
 import { echoResponder } from './engine/echo'
 import { autoName } from './engine/titler'
@@ -92,7 +92,7 @@ async function buildResponder(): Promise<Responder> {
 }
 
 const delivery = new Delivery({
-  footer: usageFooter,
+  footer: tokens => usageFooter() + contextNote(tokens),
   repo,
   signals,
   responder: await buildResponder(),
