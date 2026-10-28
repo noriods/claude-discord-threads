@@ -482,7 +482,7 @@ test('usageFooter shows the 5h and weekly reading, nothing without one', async (
     five_hour: { utilization: 41.6, resets_at: '2026-10-22T20:49:59+00:00' },
     seven_day: { utilization: 36, resets_at: '2026-10-24T18:59:59+00:00' },
   }))
-  expect(usageFooter(p)).toBe('\n-# ⏱ ▰▰▰▰▱▱▱▱▱▱ 42% · 📅 ▰▰▰▰▱▱▱▱▱▱ 36%')
+  expect(usageFooter(p)).toBe('\n\n-# ⏱ ▰▰▰▰▱▱▱▱▱▱ 42% · 📅 ▰▰▰▰▱▱▱▱▱▱ 36%')
   expect(usageFooter('/nope')).toBe('')
 })
 
@@ -496,7 +496,7 @@ test('usageFooter adds the SAST reset time from 70%', async () => {
     seven_day: { utilization: 91, resets_at: '2026-10-24T18:59:59+00:00' },
   }))
   setSystemTime(new Date('2026-10-23T14:30:00Z'))
-  expect(usageFooter(p)).toBe('\n-# ⏱ ▰▰▰▰▰▰▰▱▱▱ 70% ↻ 18:49 · 📅 ▰▰▰▰▰▰▰▰▰▱ 91% ↻ Sat 20:59')
+  expect(usageFooter(p)).toBe('\n\n-# ⏱ ▰▰▰▰▰▰▰▱▱▱ 70% ↻ 18:49 · 📅 ▰▰▰▰▰▰▰▰▰▱ 91% ↻ Sat 20:59')
   setSystemTime()
 })
 

@@ -51,7 +51,7 @@ export function usageFooter(path = `${homedir()}/.cache/claude-usage.json`): str
       const reset = w.utilization >= 70 && w.resets_at ? ` ↻ ${when(w.resets_at)}` : ''
       return `${'▰'.repeat(n)}${'▱'.repeat(10 - n)} ${Math.round(w.utilization)}%${reset}`
     }
-    return `\n-# ⏱ ${bar(d.five_hour)} · 📅 ${bar(d.seven_day)}`
+    return `\n\n-# ⏱ ${bar(d.five_hour)} · 📅 ${bar(d.seven_day)}`
   } catch {
     return ''
   }
