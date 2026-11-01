@@ -95,6 +95,21 @@ describe('fresh-thread handoff', () => {
     await closed()
   })
 
+  test('a /compact with no later usage clears the stale reading', async () => {
+    const respond = makeClaudeResponder()
+    scripts.push([usage(150_000), result('Answer')])
+    await respond(ctx('compacted', 'hi', null) as never)
+    await closed()
+    const boundary = { type: 'system', subtype: 'compact_boundary', compact_metadata: { pre_tokens: 150_000, post_tokens: 20_000 } }
+    scripts.push([boundary, result('')])
+    await respond(ctx('compacted', '/compact') as never)
+    await closed()
+    scripts.push([result('Next')])
+    await respond(ctx('compacted', 'next topic') as never)
+    expect(prompts.at(-1)).toBe('next topic')
+    await closed()
+  })
+
   test('command expansion survives the note and /compact stays a CLI command', async () => {
     const { RECAP_PROMPT } = await import('../src/discord/commands')
     const respond = makeClaudeResponder()

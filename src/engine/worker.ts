@@ -321,7 +321,12 @@ async function pump(
       const outcome = consume(message, session.ctx, lastText)
       if (outcome.assistantText) lastText = outcome.assistantText
       if (outcome.sessionId) sessionId = outcome.sessionId
-      if (outcome.compaction) compaction = outcome.compaction
+      if (outcome.compaction) {
+        compaction = outcome.compaction
+        // A compacted thread is small again: drop the stale reading so no handoff note follows.
+        contextTokens = compaction.postTokens
+        rememberContext(contextTokens ?? 0, sessionId)
+      }
       if (outcome.contextTokens) contextTokens = outcome.contextTokens
       if (!outcome.result) continue
       if (contextTokens !== undefined) rememberContext(contextTokens, sessionId)
