@@ -28,6 +28,15 @@ type UserContent = SDKUserMessage['message']['content']
 /** Retry ceiling when Discord gives us no better hint. */
 const DEFAULT_RETRY_MS = 60_000
 
+export const HANDOFF_FROM = 100_000
+
+function handoffPrompt(content: string, tokens?: number): string {
+  content = expandCommand(content)
+  // The CLI must still receive /compact as a command, not model prose.
+  if (!tokens || tokens < HANDOFF_FROM || /^\s*\/compact\b/.test(content)) return content
+  return `[context: this thread is at ~${Math.round(tokens / 1000)}k tokens. If this message is a new topic, or Norio says "new thread", answer briefly and end with a paste-ready 3–5 line opener for a fresh thread: goal, current state, file/brief, blocker, next action. Otherwise ignore this note.]\n\n${content}`
+}
+
 /**
  * Extra guidance for the worker. It is short on purpose: the delivery contract
  * is enforced in code, so it does not need to be prompted for.
@@ -122,14 +131,19 @@ type LiveSession = {
 
 export function makeClaudeResponder(workerOpts: WorkerOptions = {}): Responder {
   const live = new Map<string, LiveSession>()
+  // Survives closed SDK streams, but resets with the worker or a new session.
+  const contexts = new Map<string, { sessionId: string | null; tokens: number }>()
 
   const respond = async (ctx: TurnContext): Promise<ResponderResult> => {
     const existing = live.get(ctx.conversationId)
+    const previous = contexts.get(ctx.conversationId)
+    if (!existing && previous?.sessionId !== ctx.sessionId) contexts.delete(ctx.conversationId)
+    const content = handoffPrompt(ctx.turn.content, contexts.get(ctx.conversationId)?.tokens)
     if (existing) {
       clearTimeout(existing.hold)
       existing.ctx = ctx
       const reply = new Promise<ResponderResult>(r => (existing.waiter = r))
-      existing.push(ctx.turn.content)
+      existing.push(content)
       return reply
     }
 
@@ -170,8 +184,10 @@ export function makeClaudeResponder(workerOpts: WorkerOptions = {}): Responder {
     }
     live.set(ctx.conversationId, session)
     const reply = new Promise<ResponderResult>(r => (session.waiter = r))
-    inbox.push(buildInitialContent(ctx.turn.content, ctx.turn.image_paths))
-    void pump(session, query({ prompt: inbox.messages(), options }), abort).finally(() => {
+    inbox.push(buildInitialContent(content, ctx.turn.image_paths))
+    void pump(session, query({ prompt: inbox.messages(), options }), abort, (tokens, sessionId) => {
+      contexts.set(ctx.conversationId, { tokens, sessionId: sessionId ?? ctx.sessionId })
+    }).finally(() => {
       clearTimeout(session.hold)
       if (live.get(ctx.conversationId) === session) live.delete(ctx.conversationId)
     })
@@ -182,7 +198,7 @@ export function makeClaudeResponder(workerOpts: WorkerOptions = {}): Responder {
   const steer = (conversationId: string, content: string): boolean => {
     const session = live.get(conversationId)
     if (!session?.waiter) return false
-    session.push(content, 'next')
+    session.push(handoffPrompt(content, contexts.get(conversationId)?.tokens), 'next')
     return true
   }
 
@@ -265,6 +281,7 @@ async function pump(
   session: LiveSession,
   stream: AsyncIterable<SDKMessage>,
   abort: AbortController,
+  rememberContext: (tokens: number, sessionId?: string) => void,
 ): Promise<void> {
   // /stop aborts the turn's own controller; forward it to the session.
   const forward = () => abort.abort()
@@ -304,9 +321,15 @@ async function pump(
       const outcome = consume(message, session.ctx, lastText)
       if (outcome.assistantText) lastText = outcome.assistantText
       if (outcome.sessionId) sessionId = outcome.sessionId
-      if (outcome.compaction) compaction = outcome.compaction
+      if (outcome.compaction) {
+        compaction = outcome.compaction
+        // A compacted thread is small again: drop the stale reading so no handoff note follows.
+        contextTokens = compaction.postTokens
+        rememberContext(contextTokens ?? 0, sessionId)
+      }
       if (outcome.contextTokens) contextTokens = outcome.contextTokens
       if (!outcome.result) continue
+      if (contextTokens !== undefined) rememberContext(contextTokens, sessionId)
 
       const result =
         outcome.result.kind === 'reply' && contextTokens
