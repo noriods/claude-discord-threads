@@ -7,11 +7,11 @@
  */
 
 import { test, expect, describe } from 'bun:test'
-import type { Client } from 'discord.js'
+import type { Client, ThreadChannel } from 'discord.js'
 import { openDb } from '../src/store/db'
 import { Repo } from '../src/store/repo'
 import { handleCommand } from '../src/discord/commands'
-import { autoName, parseTitle, ownWords, messagesForTitle } from '../src/engine/titler'
+import { autoName, parseTitle, ownWords, messagesForTitle, repliesForTitle } from '../src/engine/titler'
 import { threadName } from '../src/discord/util'
 
 function setup(opts: { name?: string; title?: string | null; doneTurns?: number } = {}) {
@@ -214,5 +214,27 @@ describe('his words only', () => {
     expect(msgs[0]).toBe('Use this for our X marketing')
     expect(msgs.at(-1)).toBe('later 19')
     expect(msgs).not.toContain('later 5')
+  })
+})
+
+describe('bot replies as context', () => {
+  test('passes the start of the latest replies, oldest first, and nothing else', async () => {
+    const { repo } = setup({ doneTurns: 2 })
+    const messages = new Map([
+      ['r1', { id: 'r1', content: 'Sonnet 5 names the threads.\nMore detail.' }],
+      ['status', { id: 'status', content: '⏳ working' }],
+      ['r0', { id: 'r0', content: 'Boost ads for RaR are live.' }],
+    ])
+    const ch = { messages: { fetch: async () => messages } } as unknown as ThreadChannel
+    expect(await repliesForTitle(repo, ch, 'thread-1')).toEqual([
+      'Boost ads for RaR are live.',
+      'Sonnet 5 names the threads. More detail.',
+    ])
+  })
+
+  test('a failed fetch names from his messages alone', async () => {
+    const { repo } = setup({ doneTurns: 2 })
+    const ch = { messages: { fetch: async () => { throw new Error('rate limited') } } } as unknown as ThreadChannel
+    expect(await repliesForTitle(repo, ch, 'thread-1')).toEqual([])
   })
 })

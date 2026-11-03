@@ -349,6 +349,17 @@ export class Repo {
       .all()
   }
 
+  /** The first reply message of each of the latest done turns. */
+  recentReplyIds(threadId: string, limit: number): string[] {
+    return this.db
+      .query<TurnRow, [string, number]>(
+        "SELECT * FROM turns WHERE thread_id = ? AND state = 'done' ORDER BY id DESC LIMIT ?",
+      )
+      .all(threadId, limit)
+      .map(t => this.replyIdsOf(t)[0])
+      .filter((id): id is string => Boolean(id))
+  }
+
   replyIdsOf(turn: TurnRow): string[] {
     if (!turn.reply_message_ids) return []
     try {
