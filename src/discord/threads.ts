@@ -131,6 +131,31 @@ export type SendOptions = {
   chunkMode?: 'length' | 'newline'
 }
 
+/** Past this, a reply is a file preview instead of a wall of split messages. */
+export const FILE_REPLY_AT = 4000
+
+/**
+ * A long reply goes out as its first paragraph plus the whole text as
+ * reply.md, which Discord shows as an expandable preview: one message, nothing
+ * cut. The trailing `-#` footer lines stay in the message so they are seen.
+ */
+export function asFileReply(
+  text: string,
+  files: string[],
+  limit: number,
+): { content: string; files: (string | { attachment: Buffer; name: string })[] } | null {
+  if (text.length <= FILE_REPLY_AT || files.length >= 10) return null
+  const tail = text.match(/(\s*\n-# [^\n]*)+\s*$/)?.[0] ?? ''
+  const body = text.slice(0, text.length - tail.length).trim()
+  const note = '\n\n-# Full reply in reply.md ↓'
+  const room = Math.min(1500, limit - note.length - tail.length)
+  const lead = chunk(body.split(/\n\s*\n/)[0]!, room, 'newline')[0]!
+  return {
+    content: lead + note + tail,
+    files: [...files, { attachment: Buffer.from(body), name: 'reply.md' }],
+  }
+}
+
 /**
  * Send a reply, splitting it to fit Discord's 2000-character cap.
  *
@@ -144,8 +169,9 @@ export async function sendReply(
   opts: SendOptions = {},
 ): Promise<{ ids: string[]; error?: Error }> {
   const limit = clampChunkLimit(opts.chunkLimit)
-  const chunks = chunk(text, limit, opts.chunkMode ?? 'newline')
-  const files = opts.files ?? []
+  const long = asFileReply(text, opts.files ?? [], limit)
+  const chunks = long ? [long.content] : chunk(text, limit, opts.chunkMode ?? 'newline')
+  const files = long ? long.files : (opts.files ?? [])
   const ids: string[] = []
 
   for (let i = 0; i < chunks.length; i++) {

@@ -11,28 +11,64 @@ import { INBOX_DIR, MAX_ATTACHMENT_BYTES, MAX_CHUNK_LIMIT, STATE_DIR } from '../
 
 /**
  * Discord rejects messages over 2000 characters outright, so long replies are
- * split. `newline` mode prefers paragraph then line then word boundaries,
- * which keeps code blocks and prose from being cut mid-token.
+ * split. `newline` mode aims for equal-sized parts (no 1990 + 110 orphan),
+ * prefers cutting before a heading, then at a paragraph, line or word, and
+ * closes a code fence cut in half and reopens it in the next part so neither
+ * half renders as garbage.
  */
 export function chunk(text: string, limit: number, mode: 'length' | 'newline'): string[] {
   if (text.length <= limit) return [text]
+  if (mode === 'length') {
+    const out: string[] = []
+    for (let i = 0; i < text.length; i += limit) out.push(text.slice(i, i + limit))
+    return out
+  }
+  // Room for the "\n```" that closes a fence cut in half.
+  const budget = Math.max(1, limit - 4)
   const out: string[] = []
   let rest = text
-  while (rest.length > limit) {
-    let cut = limit
-    if (mode === 'newline') {
-      const para = rest.lastIndexOf('\n\n', limit)
-      const line = rest.lastIndexOf('\n', limit)
-      const space = rest.lastIndexOf(' ', limit)
-      // Only honour a boundary in the back half, or a long unbroken run would
-      // produce a stream of tiny messages.
-      cut = para > limit / 2 ? para : line > limit / 2 ? line : space > 0 ? space : limit
-    }
-    out.push(rest.slice(0, cut))
+  let fence: string | null = null
+  for (;;) {
+    if (fence) rest = `${fence}\n${rest}`
+    if (rest.length <= limit) break
+    const target = Math.ceil(rest.length / Math.ceil(rest.length / budget))
+    const cut = boundary(rest, target)
+    let piece = rest.slice(0, cut)
+    fence = openFence(piece)
+    if (fence) piece += '\n```'
+    out.push(piece)
     rest = rest.slice(cut).replace(/^\n+/, '')
   }
   if (rest) out.push(rest)
   return out
+}
+
+/** Best cut at or before `max`, but not in the front half (no tiny parts). */
+function boundary(s: string, max: number): number {
+  const min = max / 2
+  const head = lastMatch(s, /\n(?=#{1,3} |\*\*)/g, max)
+  if (head > min) return head
+  for (const sep of ['\n\n', '\n', ' ']) {
+    const i = s.lastIndexOf(sep, max)
+    if (i > min) return i
+  }
+  return max
+}
+
+function lastMatch(s: string, re: RegExp, max: number): number {
+  let last = -1
+  for (const m of s.slice(0, max + 1).matchAll(re)) last = m.index!
+  return last
+}
+
+/** The opening fence line (e.g. "```ts") if `s` ends inside a code block. */
+function openFence(s: string): string | null {
+  let open: string | null = null
+  for (const line of s.split('\n')) {
+    const t = line.trim()
+    if (t.startsWith('```')) open = open ? null : t
+  }
+  return open
 }
 
 export function clampChunkLimit(configured: number | undefined): number {
