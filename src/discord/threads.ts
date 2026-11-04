@@ -21,7 +21,7 @@ import {
 import type { Repo } from '../store/repo'
 import { cachedModelDisplayName } from '../engine/control'
 import { noteSent } from './access'
-import { chunk, clampChunkLimit, openFence, threadName } from './util'
+import { chunk, clampChunkLimit, openFence, threadName, wrap } from './util'
 
 export type Conversation = {
   /** Conversation key: a thread id in guilds, the DM channel id otherwise. */
@@ -172,6 +172,7 @@ export async function sendReply(
   text: string,
   opts: SendOptions = {},
 ): Promise<{ ids: string[]; error?: Error }> {
+  text = wrap(text)
   const limit = clampChunkLimit(opts.chunkLimit)
   const long = asFileReply(text, opts.files ?? [], limit)
   const chunks = long ? [long.content] : chunk(text, limit, opts.chunkMode ?? 'newline')

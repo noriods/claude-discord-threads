@@ -66,6 +66,31 @@ function lastMatch(s: string, re: RegExp, max: number): number {
   return last
 }
 
+/**
+ * Hard-wrap prose at `width` so lines stay readable on a wide Discord window
+ * (Norio 4 Nov 2026). Code blocks, headings, footers and words longer than the
+ * width (URLs) are left alone; list and quote continuations keep their prefix.
+ */
+export function wrap(text: string, width = 80): string {
+  let fenced = false
+  return text.split('\n').map(line => {
+    if (line.trim().startsWith('```')) fenced = !fenced
+    if (fenced || line.trim().startsWith('```') || line.length <= width || /^\s*(#|-#|\|)/.test(line)) return line
+    const lead = line.match(/^(\s*(?:>\s*)*(?:[-*+]|\d+[.)])?\s*)/)![1]!
+    const pad = lead.startsWith('>') ? lead.replace(/[-*+]|\d+[.)]/, m => ' '.repeat(m.length)) : ' '.repeat(lead.length)
+    const out: string[] = []
+    let cur = lead
+    let empty = true
+    for (const word of line.slice(lead.length).split(' ')) {
+      if (!empty && cur.length + word.length + 1 > width) { out.push(cur); cur = pad; empty = true }
+      cur += (empty ? '' : ' ') + word
+      empty = false
+    }
+    out.push(cur.trimEnd())
+    return out.join('\n')
+  }).join('\n')
+}
+
 /** The opening fence line (e.g. "```ts") if `s` ends inside a code block. */
 export function openFence(s: string): string | null {
   let open: string | null = null
