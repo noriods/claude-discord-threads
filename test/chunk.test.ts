@@ -61,3 +61,21 @@ test('a long reply becomes lead + reply.md, footer kept in the message', () => {
 test('normal-length replies are not turned into files', () => {
   expect(asFileReply('x'.repeat(3000), [], 2000)).toBeNull()
 })
+
+test('a tiny limit with a fence still finishes', () => {
+  const parts = chunk('```ts\n' + 'x'.repeat(50) + '\n```', 10, 'newline')
+  expect(parts.join('')).toContain('x'.repeat(10))
+  const mid = chunk('```ts\n' + 'abc def\n'.repeat(30) + '```', 60, 'newline')
+  for (const p of mid) expect(p.length).toBeLessThanOrEqual(60)
+})
+
+test('a huge footer falls back to splitting instead of hanging', () => {
+  const text = 'word '.repeat(1000) + '\n\n' + Array.from({ length: 60 }, () => '-# ' + 'f'.repeat(30)).join('\n')
+  expect(asFileReply(text, [], 2000)).toBeNull()
+})
+
+test('a preview that stops inside a code block is closed', () => {
+  const text = '```sh\necho one\n\necho two\n```\n\n' + 'more words here. '.repeat(400)
+  const r = asFileReply(text, [], 2000)!
+  expect(fences(r.content) % 2).toBe(0)
+})

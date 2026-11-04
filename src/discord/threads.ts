@@ -21,7 +21,7 @@ import {
 import type { Repo } from '../store/repo'
 import { cachedModelDisplayName } from '../engine/control'
 import { noteSent } from './access'
-import { chunk, clampChunkLimit, threadName } from './util'
+import { chunk, clampChunkLimit, openFence, threadName } from './util'
 
 export type Conversation = {
   /** Conversation key: a thread id in guilds, the DM channel id otherwise. */
@@ -148,8 +148,12 @@ export function asFileReply(
   const tail = text.match(/(\s*\n-# [^\n]*)+\s*$/)?.[0] ?? ''
   const body = text.slice(0, text.length - tail.length).trim()
   const note = '\n\n-# Full reply in reply.md ↓'
-  const room = Math.min(1500, limit - note.length - tail.length)
-  const lead = chunk(body.split(/\n\s*\n/)[0]!, room, 'newline')[0]!
+  const room = Math.min(1500, limit - note.length - tail.length - 4)
+  // A huge footer leaves no room for a preview; plain splitting copes.
+  if (room < 200) return null
+  let lead = chunk(body.split(/\n\s*\n/)[0]!, room, 'newline')[0]!
+  // The first paragraph can stop inside a code block that has a blank line.
+  if (openFence(lead)) lead += '\n```'
   return {
     content: lead + note + tail,
     files: [...files, { attachment: Buffer.from(body), name: 'reply.md' }],

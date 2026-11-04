@@ -18,7 +18,8 @@ import { INBOX_DIR, MAX_ATTACHMENT_BYTES, MAX_CHUNK_LIMIT, STATE_DIR } from '../
  */
 export function chunk(text: string, limit: number, mode: 'length' | 'newline'): string[] {
   if (text.length <= limit) return [text]
-  if (mode === 'length') {
+  // Too small to fit a reopened fence and still make progress.
+  if (mode === 'length' || limit < 40) {
     const out: string[] = []
     for (let i = 0; i < text.length; i += limit) out.push(text.slice(i, i + limit))
     return out
@@ -29,10 +30,11 @@ export function chunk(text: string, limit: number, mode: 'length' | 'newline'): 
   let rest = text
   let fence: string | null = null
   for (;;) {
+    const floor = fence ? fence.length + 1 : 0
     if (fence) rest = `${fence}\n${rest}`
     if (rest.length <= limit) break
     const target = Math.ceil(rest.length / Math.ceil(rest.length / budget))
-    const cut = boundary(rest, target)
+    const cut = boundary(rest, target, floor)
     let piece = rest.slice(0, cut)
     fence = openFence(piece)
     if (fence) piece += '\n```'
@@ -43,9 +45,12 @@ export function chunk(text: string, limit: number, mode: 'length' | 'newline'): 
   return out
 }
 
-/** Best cut at or before `max`, but not in the front half (no tiny parts). */
-function boundary(s: string, max: number): number {
-  const min = max / 2
+/**
+ * Best cut at or before `max`, but not in the front half (no tiny parts) and
+ * past `floor`, the reopened fence, so every part consumes real text.
+ */
+function boundary(s: string, max: number, floor: number): number {
+  const min = Math.max(max / 2, floor)
   const head = lastMatch(s, /\n(?=#{1,3} |\*\*)/g, max)
   if (head > min) return head
   for (const sep of ['\n\n', '\n', ' ']) {
@@ -62,7 +67,7 @@ function lastMatch(s: string, re: RegExp, max: number): number {
 }
 
 /** The opening fence line (e.g. "```ts") if `s` ends inside a code block. */
-function openFence(s: string): string | null {
+export function openFence(s: string): string | null {
   let open: string | null = null
   for (const line of s.split('\n')) {
     const t = line.trim()
