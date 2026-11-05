@@ -11,7 +11,7 @@
  */
 
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { Client } from 'discord.js'
+import type { Client, ThreadChannel } from 'discord.js'
 import type { Repo } from '../store/repo'
 import { DEFAULT_CWD } from '../config'
 import { threadName } from '../discord/util'
@@ -24,8 +24,10 @@ const TITLE_MODEL = 'claude-sonnet-5'
 const RECENT_MESSAGES = 12
 /** The opening messages set the thread's direction, so they always count. */
 const OPENING_MESSAGES = 3
+/** His short replies ("yes, do it") only have a topic next to what they answer. */
+const RECENT_REPLIES = 6
 
-export type Suggest = (current: string, messages: string[]) => Promise<string | null>
+export type Suggest = (current: string, messages: string[], replies?: string[]) => Promise<string | null>
 
 const STYLE_EXAMPLES = [
   'Pip Guides',
@@ -81,8 +83,27 @@ export function messagesForTitle(repo: Repo, threadId: string): string[] {
   return all.filter(m => !m.trimStart().startsWith('/')).map(ownWords).filter(Boolean)
 }
 
+/**
+ * The start of the bot's latest replies, oldest first. Context only: a failed
+ * fetch just means naming from his messages alone.
+ */
+export async function repliesForTitle(repo: Repo, ch: ThreadChannel, threadId: string): Promise<string[]> {
+  const ids = new Set(repo.recentReplyIds(threadId, RECENT_REPLIES))
+  if (!ids.size) return []
+  try {
+    const fetched = await ch.messages.fetch({ limit: 50 })
+    return [...fetched.values()]
+      .filter(m => ids.has(m.id))
+      .reverse()
+      .map(m => m.content.replace(/\s+/g, ' ').trim().slice(0, 300))
+      .filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
 /** Ask a small model, no tools, one turn, what the thread is about now. */
-export const suggestTitle: Suggest = async (current, messages) => {
+export const suggestTitle: Suggest = async (current, messages, replies = []) => {
   const prompt = [
     'Name this Discord thread. The owner names threads like this:',
     STYLE_EXAMPLES.map(e => `- ${e}`).join('\n'),
@@ -91,8 +112,9 @@ export const suggestTitle: Suggest = async (current, messages) => {
     'These are only his messages. Name the goal he is steering the thread towards,',
     'not a detail from one message. The first messages are context; name what the',
     'latest messages are steering towards, since names follow the conversation.',
-    'Build the name from words he actually used (his abbreviations and brand names',
-    'as written), not words of your own. Title Case otherwise.',
+    'Prefer words he actually used (his abbreviations and brand names as written).',
+    'His messages are often short ("yes do it", "ship 3"); when they do not say the',
+    'topic, take it from the assistant replies below. Title Case otherwise.',
     'He dictates, so a word may be a sound-alike (e.g. "SOUL" for "SOL"); never',
     'build the name on one odd word.',
     'Reply with the name only: no quotes, no explanation.',
@@ -101,6 +123,10 @@ export const suggestTitle: Suggest = async (current, messages) => {
     messages
       .map((m, i) => `${i >= messages.length - 5 ? '- LATEST: ' : '- '}${m.replace(/\s+/g, ' ').trim().slice(0, 300)}`)
       .join('\n'),
+    ...(replies.length
+      ? ['', 'The assistant\'s latest replies, oldest first (context for what his messages refer to):',
+         replies.map(r => `- ${r}`).join('\n')]
+      : []),
   ].join('\n')
 
   try {
@@ -156,7 +182,7 @@ export async function renameFromSuggestion(
 ): Promise<string | null> {
   const ch = await client.channels.fetch(threadId)
   if (!ch?.isThread()) return null
-  const name = await suggest(ch.name, messagesForTitle(repo, threadId))
+  const name = await suggest(ch.name, messagesForTitle(repo, threadId), await repliesForTitle(repo, ch, threadId))
   if (!name) return null
   return applyName(client, repo, threadId, name)
 }
@@ -185,7 +211,7 @@ export async function autoName(
       repo.setThreadNamed(threadId, ch.name, done, true)
       return
     }
-    const name = await suggest(ch.name, messagesForTitle(repo, threadId))
+    const name = await suggest(ch.name, messagesForTitle(repo, threadId), await repliesForTitle(repo, ch, threadId))
     if (name && name.toLowerCase() !== ch.name.toLowerCase()) {
       await applyName(client, repo, threadId, name)
     } else {

@@ -297,6 +297,13 @@ asked, not the channel. Registration needs the bot to have been invited with the
 `applications.commands` scope; without it the daemon logs a warning and the
 plain-text form keeps working.
 
+## Scheduled one-shot jobs
+
+On Linux, run `bin/later reminder "tomorrow 09:00" -- echo "Time to check in"` (optional `--cwd DIR` before `--`).
+`bin/later` or `bin/later list` shows pending jobs; `bin/later rm reminder` cancels one.
+Jobs live in `${DISCORD_STATE_DIR:-~/.claude/channels/discord}/later/`; the daemon checks every minute and fires overdue jobs after downtime.
+Claimed jobs move to `fired/` before launch; invalid jobs move to `bad/`. Commands run as separate systemd user services and survive daemon restarts.
+
 ## Configuration
 
 Environment variables, all optional:

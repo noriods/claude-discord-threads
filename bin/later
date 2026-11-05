@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+dir="${DISCORD_STATE_DIR:-$HOME/.claude/channels/discord}/later"
+mkdir -p -- "$dir"
+
+fail() { echo "later: $*" >&2; exit 1; }
+valid_name() { [[ "$1" =~ ^[a-z0-9-]+$ ]] || fail 'NAME must match [a-z0-9-]+'; }
+usage() { fail 'usage: later [list | rm NAME | NAME "WHEN" [--cwd DIR] -- CMD [ARGS...]]'; }
+
+if (( $# == 0 )) || [[ "$1" == list && $# == 1 ]]; then
+  shopt -s nullglob
+  for file in "$dir"/*.json; do
+    python3 - "$file" <<'PY'
+import json, shlex, sys
+from datetime import datetime
+f = sys.argv[1]; j = json.load(open(f))
+at = datetime.fromisoformat(j["at"])
+name = f.rsplit("/", 1)[1][:-5]
+cmd = shlex.join(j["cmd"]).replace("\n", "\\n")
+print(f"{at.timestamp():.0f}\t{at.astimezone().isoformat()}\t{name}\t{cmd}")
+PY
+  done | sort -n -k1,1 | cut -f2-
+  exit 0
+fi
+
+if [[ "$1" == rm ]]; then
+  (( $# == 2 )) || usage
+  valid_name "$2"
+  rm -- "$dir/$2.json"
+  exit 0
+fi
+
+(( $# >= 4 )) || usage
+name=$1
+when=$2
+valid_name "$name"
+shift 2
+cwd=
+if [[ "$1" == --cwd ]]; then
+  (( $# >= 4 )) || usage
+  [[ -n "$2" ]] || fail 'cwd must not be empty'
+  cwd=$(realpath -s -- "$2")
+  shift 2
+fi
+[[ "$1" == -- ]] || usage
+shift
+(( $# > 0 )) || usage
+[[ -n "$1" ]] || fail 'command must not be empty'
+# The daemon's PATH is minimal; store the command as an absolute path.
+exe=$(type -P -- "$1") && exe=$(realpath -s -- "$exe") || fail "command not found: $1"
+shift
+set -- "$exe" "$@"
+seconds=$(date -d "$when" +%s) || fail "invalid WHEN: $when"
+(( seconds > $(date +%s) )) || fail 'WHEN must be in the future'
+at=$(date -d "@$seconds" -Iseconds)
+
+# Serialize writers so two callers cannot replace the same pending name.
+exec 9>"$dir/.lock"
+flock -x 9
+[[ ! -e "$dir/$name.json" ]] || fail "already queued: $name"
+tmp=$(mktemp "$dir/.later.XXXXXX")
+trap 'rm -f -- "$tmp"' EXIT
+python3 -c 'import json, sys
+at, cwd, *cmd = sys.argv[1:]
+json.dump({"at": at, "cmd": cmd, **({"cwd": cwd} if cwd else {})}, sys.stdout)' "$at" "$cwd" "$@" > "$tmp"
+mv -- "$tmp" "$dir/$name.json"
+printf 'queued %s for %s\n' "$name" "$at"

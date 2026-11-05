@@ -16,6 +16,7 @@ export const STATE_DIR =
 export const ACCESS_FILE = join(STATE_DIR, 'access.json')
 export const APPROVED_DIR = join(STATE_DIR, 'approved')
 export const INBOX_DIR = join(STATE_DIR, 'inbox')
+export const LATER_DIR = join(STATE_DIR, 'later')
 export const ENV_FILE = join(STATE_DIR, '.env')
 export const DB_FILE = process.env.DISCORD_DB_FILE ?? join(STATE_DIR, 'threads.db')
 
