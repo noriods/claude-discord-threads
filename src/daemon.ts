@@ -11,6 +11,7 @@ import { Client, GatewayIntentBits, Partials, ChannelType, type Message } from '
 import {
   DEFAULT_CWD,
   KEEP_OPEN_SWEEP_MS,
+  LATER_DIR,
   loadEnvFile,
   MAX_LIVE_WORKERS,
 } from './config'
@@ -40,6 +41,7 @@ import { Delivery, usageFooter, contextNote, type Responder, type TurnContext } 
 import { acquireSingleInstanceLock } from './lock'
 import { echoResponder } from './engine/echo'
 import { autoName } from './engine/titler'
+import { tickLater, runLater } from './later'
 
 loadEnvFile()
 
@@ -549,6 +551,12 @@ client.on('error', err => log.error('gateway client error', { error: describeErr
 // and is removed in v15, where it means the raw gateway READY instead.
 client.once('clientReady', async c => {
   log.info('gateway connected', { as: c.user.tag, maxConcurrentTurns: MAX_LIVE_WORKERS })
+  const laterTick = () => tickLater(LATER_DIR, new Date(), runLater).catch(err =>
+    log.error('later tick failed', { error: describeError(err) }),
+  )
+  void laterTick()
+  const later = setInterval(() => void laterTick(), 60_000)
+  if (typeof later === 'object' && 'unref' in later) later.unref()
   // The access skill signals approvals by dropping files; pick them up.
   watchApprovals(client)
   // Only allowlisted accounts may answer a permission prompt — a button in a
