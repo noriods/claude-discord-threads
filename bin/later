@@ -48,7 +48,7 @@ shift
 (( $# > 0 )) || usage
 [[ -n "$1" ]] || fail 'command must not be empty'
 # The daemon's PATH is minimal; store the command as an absolute path.
-exe=$(type -P -- "$1") || fail "command not found: $1"
+exe=$(type -P -- "$1") && exe=$(realpath -s -- "$exe") || fail "command not found: $1"
 shift
 set -- "$exe" "$@"
 seconds=$(date -d "$when" +%s) || fail "invalid WHEN: $when"

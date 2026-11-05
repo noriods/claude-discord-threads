@@ -1,3 +1,4 @@
+import { existsSync } from 'fs'
 import { mkdir, readdir, readFile, rename } from 'fs/promises'
 import { homedir } from 'os'
 import { join } from 'path'
@@ -25,7 +26,7 @@ function isJob(value: unknown): value is LaterJob {
 export async function tickLater(
   dir: string,
   now: Date,
-  run: (name: string, job: LaterJob) => void | Promise<void>,
+  run: (name: string, job: LaterJob) => boolean | Promise<boolean>,
 ): Promise<void> {
   await mkdir(dir, { recursive: true })
   const stamp = now.toISOString().replace(/[-:]/g, '').slice(0, 15)
@@ -48,9 +49,19 @@ export async function tickLater(
       }
       if (Date.parse(job.at) > now.getTime()) continue
       await mkdir(join(dir, 'fired'), { recursive: true })
-      await rename(source, join(dir, 'fired', `${name}.${stamp}.json`))
-      log.info('later job due', { name, lateMinutes: (now.getTime() - Date.parse(job.at)) / 60_000 })
-      await run(name, job)
+      const claimed = join(dir, 'fired', `${name}.${stamp}.json`)
+      await rename(source, claimed)
+      // Run what was claimed, not what was read: `later rm` + a new enqueue
+      // may have swapped the file in between.
+      const value: unknown = JSON.parse(await readFile(claimed, 'utf8'))
+      if (!isJob(value) || Date.parse(value.at) > now.getTime()) {
+        await rename(claimed, source)
+        continue
+      }
+      log.info('later job due', { name, lateMinutes: (now.getTime() - Date.parse(value.at)) / 60_000 })
+      // A launch that failed (user bus down, say) goes back to pending and is
+      // retried next tick, unless the name has been queued again meanwhile.
+      if (!(await run(name, value)) && !existsSync(source)) await rename(claimed, source)
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
         log.error('later job failed', { name, error: describeError(err) })
@@ -60,11 +71,12 @@ export async function tickLater(
 }
 
 /** A separate user service keeps the command alive across daemon restarts. */
-export async function runLater(name: string, job: LaterJob): Promise<void> {
+export async function runLater(name: string, job: LaterJob): Promise<boolean> {
   // systemd-run does not expand %n, so the failure unit is named outright.
   const unit = `later-${name}-${Math.floor(Date.now() / 1000)}`
   const args = [
-    'systemd-run', '--user', '--collect', `--unit=${unit}`,
+    // --expand-environment=no: a literal $VAR in the command reaches it intact.
+    'systemd-run', '--user', '--collect', '--expand-environment=no', `--unit=${unit}`,
     `--property=OnFailure=failure-alert@${unit}.service`,
     ...(job.cwd === undefined ? [] : [`--working-directory=${job.cwd}`]),
     `--setenv=PATH=${homedir()}/.local/bin:${process.env.PATH ?? ''}`, '--', ...job.cmd,
@@ -74,7 +86,9 @@ export async function runLater(name: string, job: LaterJob): Promise<void> {
     log.info('later job launched', { name, cmd: job.cmd })
     const exitCode = await child.exited
     if (exitCode !== 0) log.error('later systemd-run failed', { name, exitCode })
+    return exitCode === 0
   } catch (err) {
     log.error('later launch failed', { name, error: describeError(err) })
+    return false
   }
 }
