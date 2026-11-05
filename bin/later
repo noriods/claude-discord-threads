@@ -40,7 +40,7 @@ cwd=
 if [[ "$1" == --cwd ]]; then
   (( $# >= 4 )) || usage
   [[ -n "$2" ]] || fail 'cwd must not be empty'
-  cwd=$2
+  cwd=$(realpath -s -- "$2")
   shift 2
 fi
 [[ "$1" == -- ]] || usage
