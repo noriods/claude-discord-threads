@@ -43,7 +43,6 @@ export type PlanWindow = { utilization: number | null; resets_at: string | null 
 export type PlanUsage = {
   subscriptionType: string | null
   available: boolean
-  fiveHour?: PlanWindow | null
   sevenDay?: PlanWindow | null
   modelScoped: Array<{ display_name: string; utilization: number | null; resets_at: string | null }>
 }
@@ -74,7 +73,6 @@ export async function planUsage(cwd: string): Promise<PlanUsage | null> {
     const value: PlanUsage = {
       subscriptionType: (raw as { subscription_type?: string | null }).subscription_type ?? null,
       available: Boolean((raw as { rate_limits_available?: boolean }).rate_limits_available),
-      fiveHour: (limits.five_hour ?? null) as PlanWindow | null,
       sevenDay: (limits.seven_day ?? null) as PlanWindow | null,
       modelScoped: (limits.model_scoped ?? []) as PlanUsage['modelScoped'],
     }

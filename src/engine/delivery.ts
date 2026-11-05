@@ -23,8 +23,8 @@ import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 
 /**
- * Plan usage under every model reply (Norio 22 Oct 2026). Reads the reading
- * the claude-budget-gate hook refreshes on each prompt; no reading, no footer.
+ * Weekly plan usage under every model reply. Reads the cache the
+ * claude-budget-gate hook refreshes on each prompt; no reading, no footer.
  */
 /**
  * Thread size once it is big enough to matter (Norio 28 Oct 2026): every tool
@@ -51,7 +51,11 @@ export function usageFooter(path = `${homedir()}/.cache/claude-usage.json`): str
       const reset = w.utilization >= 70 && w.resets_at ? ` ↻ ${when(w.resets_at)}` : ''
       return `${'▰'.repeat(n)}${'▱'.repeat(10 - n)} ${Math.round(w.utilization)}%${reset}`
     }
-    return `\n\n-# ⏱ ${bar(d.five_hour)} · 📅 ${bar(d.seven_day)}`
+    // Weekly use as a share of claude-budget-gate's pace limit (14 points per day since the window opened); 100% = paused (Norio 2 Nov 2026).
+    const w = d.seven_day
+    const elapsed = Math.min(7, Math.max(0, (Date.now() - new Date(w.resets_at).getTime()) / 86_400_000 + 7))
+    const pace = elapsed > 0 ? (100 * w.utilization) / (14 * elapsed) : 0
+    return `\n\n-# 📅 ${bar(w)} · 🚦 ${bar({ utilization: pace })}`
   } catch {
     return ''
   }

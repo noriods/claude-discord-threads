@@ -62,7 +62,7 @@ const HELP = [
   '`/rename [name]` — rename this thread, or let Claude pick a short name',
   '',
   '**Claude**',
-  '`/usage` — plan limits: 5-hour and weekly windows',
+  '`/usage` — weekly plan usage and reset time',
   '`/cost` — what this thread has spent',
   '`/context` — context window used by this conversation',
   '`/model [name]` — show, list or set the model for this thread',
@@ -264,9 +264,6 @@ async function usage(ctx: CommandContext): Promise<string> {
   }
 
   const lines = [`**Plan** ${plan.subscriptionType ?? 'unknown'}`]
-  if (plan.fiveHour) {
-    lines.push(`**5-hour** ${bar(plan.fiveHour.utilization)}${resetsIn(plan.fiveHour.resets_at)}`)
-  }
   if (plan.sevenDay) {
     lines.push(`**Weekly** ${bar(plan.sevenDay.utilization)}${resetsIn(plan.sevenDay.resets_at)}`)
   }

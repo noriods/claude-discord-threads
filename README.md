@@ -232,7 +232,7 @@ answer.
 
 | Claude | |
 |---|---|
-| `/usage` | plan limits — 5-hour and weekly windows, with reset times |
+| `/usage` | weekly plan usage and reset time |
 | `/cost` | what this thread has spent |
 | `/context` | context window used by this conversation |
 | `/model [name]` | show, list or set the model for this thread |
