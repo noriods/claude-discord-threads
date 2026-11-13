@@ -74,6 +74,7 @@ export type TurnContext = {
   cwd: string
   /** Per-thread overrides; null means fall back to the daemon default. */
   model?: string | null
+  effort?: string | null
   permissionMode?: string | null
   /** Aborted by `/stop`. The worker passes it to the SDK. */
   abort?: AbortController

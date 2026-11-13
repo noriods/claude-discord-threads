@@ -7,16 +7,23 @@
  * argument is wrong.
  */
 
-import { test, expect, describe } from 'bun:test'
+import { test, expect, describe, mock } from 'bun:test'
 import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { Client } from 'discord.js'
 import { openDb } from '../src/store/db'
 import { Repo } from '../src/store/repo'
-import { handleCommand, expandCommand, RECAP_PROMPT } from '../src/discord/commands'
 import { keepThreadsOpen } from '../src/discord/threads'
 import { consume, describeCompaction } from '../src/engine/worker'
+
+// A fixed model list, so `/model <name> ...` resolves without spawning a CLI.
+const realControl = await import('../src/engine/control')
+mock.module('../src/engine/control', () => ({
+  ...realControl,
+  availableModels: async () => ['opus', 'sonnet', 'haiku'].map(value => ({ value, displayName: value })),
+}))
+const { handleCommand, expandCommand, RECAP_PROMPT } = await import('../src/discord/commands')
 
 /** Every command under test here answers with a reply, never a forward. */
 function replyOf(out: Awaited<ReturnType<typeof handleCommand>>): string {
@@ -469,6 +476,79 @@ describe('/model global', () => {
     expect(reply).toContain('Model for this thread')
     expect(reply).toContain('New threads start on: **sonnet**')
   }, 30_000)
+})
+
+describe('/model effort', () => {
+  const forwardOf = (out: Awaited<ReturnType<typeof handleCommand>>) => {
+    if (!out.handled || !('forward' in out)) throw new Error(`expected a forward, got: ${JSON.stringify(out)}`)
+    return out.forward
+  }
+
+  test('name and effort set both on this thread', async () => {
+    const { ctx, repo } = setup()
+    await handleCommand('/model opus low', ctx)
+    expect(repo.getThread('thread-1')).toMatchObject({ model: 'opus', effort: 'low' })
+  })
+
+  test('name alone clears the thread effort', async () => {
+    const { ctx, repo } = setup()
+    repo.setThreadEffort('thread-1', 'high')
+    await handleCommand('/model opus', ctx)
+    expect(repo.getThread('thread-1')).toMatchObject({ model: 'opus', effort: null })
+  })
+
+  test('effort is case-insensitive', async () => {
+    const { ctx, repo } = setup()
+    await handleCommand('/model opus XHIGH', ctx)
+    expect(repo.getThread('thread-1')?.effort).toBe('xhigh')
+  })
+
+  test('name, effort and message forward all three', async () => {
+    const { ctx } = setup()
+    const f = forwardOf(await handleCommand('/model opus low fix the bug', ctx))
+    expect(f).toEqual({ content: 'fix the bug', model: 'opus', effort: 'low' })
+  })
+
+  test('a non-level second word stays the start of the message', async () => {
+    const { ctx } = setup()
+    const f = forwardOf(await handleCommand('/model opus fix the bug', ctx))
+    expect(f).toEqual({ content: 'fix the bug', model: 'opus', effort: null })
+  })
+
+  test('an unknown effort-looking word is not an effort', async () => {
+    const { ctx, repo } = setup()
+    const f = forwardOf(await handleCommand('/model opus extreme', ctx))
+    expect(f).toEqual({ content: 'extreme', model: 'opus', effort: null })
+    expect(repo.getThread('thread-1')?.effort).toBeNull()
+  })
+
+  test('global with and without effort', async () => {
+    const { ctx, repo } = setup()
+    await handleCommand('/model global opus high', ctx)
+    expect(repo.defaultModel()).toBe('opus')
+    expect(repo.defaultEffort()).toBe('high')
+    await handleCommand('/model global sonnet', ctx)
+    expect(repo.defaultEffort()).toBeNull()
+  })
+
+  test('reset returns the thread to the global model and effort; global reset clears both', async () => {
+    const { ctx, repo } = setup()
+    repo.setDefaultModel('sonnet')
+    repo.setDefaultEffort('medium')
+    await handleCommand('/model opus max', ctx)
+    await handleCommand('/model reset', ctx)
+    expect(repo.getThread('thread-1')).toMatchObject({ model: 'sonnet', effort: 'medium' })
+    await handleCommand('/model global default', ctx)
+    expect(repo.defaultModel()).toBeNull()
+    expect(repo.defaultEffort()).toBeNull()
+  })
+
+  test('/status and /model show the effort', async () => {
+    const { ctx, repo } = setup()
+    repo.setThreadEffort('thread-1', 'high')
+    expect(replyOf(await handleCommand('/status', ctx))).toContain('**effort** high')
+    expect(replyOf(await handleCommand('/model', ctx))).toContain('effort **high**')
+  })
 })
 
 describe('/model outside a thread', () => {

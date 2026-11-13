@@ -172,6 +172,7 @@ export function makeClaudeResponder(workerOpts: WorkerOptions = {}): Responder {
       abortController: abort,
       ...(ctx.sessionId ? { resume: ctx.sessionId } : {}),
       ...(ctx.model ?? workerOpts.model ? { model: ctx.model ?? workerOpts.model } : {}),
+      ...(ctx.effort ? { effort: ctx.effort as Options['effort'] } : {}),
       ...(canUseTool ? { canUseTool, permissionPrompts: 'host' as const } : {}),
     }
 

@@ -20,14 +20,18 @@ export class Repo {
       .get(threadId)
   }
 
-  createThread(row: Omit<ThreadRow, 'created_at' | 'last_active_at' | 'named_turns' | 'hand_named'>): ThreadRow {
+  createThread(
+    row: Omit<ThreadRow, 'created_at' | 'last_active_at' | 'named_turns' | 'hand_named' | 'effort'> & {
+      effort?: string | null
+    },
+  ): ThreadRow {
     const now = Date.now()
     this.db.run(
       `INSERT INTO threads
          (thread_id, channel_id, root_message_id, guild_id, cc_session_id,
-          cwd, title, state, model, permission_mode, header_message_id,
+          cwd, title, state, model, effort, permission_mode, header_message_id,
           created_at, last_active_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(thread_id) DO NOTHING`,
       [
         row.thread_id,
@@ -39,6 +43,7 @@ export class Repo {
         row.title,
         row.state,
         row.model,
+        row.effort ?? null,
         row.permission_mode,
         row.header_message_id,
         now,
@@ -80,6 +85,10 @@ export class Repo {
 
   setThreadModel(threadId: string, model: string | null): void {
     this.db.run('UPDATE threads SET model = ? WHERE thread_id = ?', [model, threadId])
+  }
+
+  setThreadEffort(threadId: string, effort: string | null): void {
+    this.db.run('UPDATE threads SET effort = ? WHERE thread_id = ?', [effort, threadId])
   }
 
   setThreadPermissionMode(threadId: string, mode: string | null): void {
@@ -124,6 +133,15 @@ export class Repo {
 
   setDefaultModel(model: string | null): void {
     this.setSetting('default_model', model)
+  }
+
+  /** The effort new threads start on. Null means nothing is passed to the SDK. */
+  defaultEffort(): string | null {
+    return this.getSetting('default_effort')
+  }
+
+  setDefaultEffort(effort: string | null): void {
+    this.setSetting('default_effort', effort)
   }
 
   /**
