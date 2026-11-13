@@ -3,13 +3,15 @@ import { describe, expect, mock, test } from 'bun:test'
 // Each call to query() plays the next script: the messages the CLI would stream.
 const scripts: Array<unknown[] | ((input: AsyncIterator<unknown>) => AsyncGenerator<unknown>)> = []
 const prompts: unknown[] = []
+const queryOptions: Array<Record<string, unknown>> = []
 async function readInput(input: AsyncIterator<unknown>) {
   const next = await input.next()
   prompts.push((next.value as { message: { content: unknown } }).message.content)
 }
 mock.module('@anthropic-ai/claude-agent-sdk', () => ({
-  query: ({ prompt }: { prompt: AsyncIterable<unknown> }) =>
+  query: ({ prompt, options }: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) =>
     (async function* () {
+      queryOptions.push(options)
       const input = prompt[Symbol.asyncIterator]()
       await readInput(input)
       const script = scripts.shift() ?? []
@@ -140,6 +142,24 @@ async function run(lateText: string): Promise<{ reply: string; late: string[] }>
   await new Promise(r => setTimeout(r, 10))
   return { reply: reply.kind === 'reply' ? reply.text : reply.kind, late }
 }
+
+describe('effort', () => {
+  const turn = (id: string, effort?: string | null) => ({
+    turn: { content: 'hi', image_paths: null }, conversationId: id, sessionId: null, message: null, cwd: '.', effort,
+  })
+
+  test('reaches the SDK options when set', async () => {
+    scripts.push([result('ok')])
+    await makeClaudeResponder()(turn('effort-set', 'low') as never)
+    expect(queryOptions.at(-1)?.effort).toBe('low')
+  })
+
+  test.each([[null], [undefined]])('is absent when %p', async unset => {
+    scripts.push([result('ok')])
+    await makeClaudeResponder()(turn(`effort-${unset}`, unset) as never)
+    expect(queryOptions.at(-1)).not.toHaveProperty('effort')
+  })
+})
 
 describe('late wake-ups after background work', () => {
   test('a real late answer is posted', async () => {

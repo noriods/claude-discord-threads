@@ -40,6 +40,8 @@ export type ThreadRow = {
   state: 'open' | 'archived'
   /** Per-thread model override; null means the account default. */
   model: string | null
+  /** Per-thread reasoning effort; null means the default effort. */
+  effort: string | null
   /** Per-thread permission mode override; null means the daemon default. */
   permission_mode: string | null
   /** The header message announcing this thread's model, so it can be edited. */
@@ -92,6 +94,7 @@ CREATE TABLE IF NOT EXISTS threads (
   title           TEXT,
   state           TEXT NOT NULL DEFAULT 'open',
   model           TEXT,
+  effort          TEXT,
   permission_mode TEXT,
   header_message_id TEXT,
   named_turns     INTEGER,
@@ -172,6 +175,7 @@ function migrate(db: Database): void {
 
   const additions: Array<[string, string, string]> = [
     ['threads', 'model', 'TEXT'],
+    ['threads', 'effort', 'TEXT'],
     ['threads', 'permission_mode', 'TEXT'],
     ['threads', 'header_message_id', 'TEXT'],
     ['threads', 'named_turns', 'INTEGER'],

@@ -142,7 +142,7 @@ export type SlashDeps = {
     channelId: string,
     content: string,
     userId: string,
-    override: { model?: string; permissionMode?: string },
+    override: { model?: string; effort?: string | null; permissionMode?: string },
   ) => Promise<string | null>
 }
 
@@ -202,7 +202,7 @@ async function handle(
   // Message to fall through to, so the override and the turn are applied
   // here instead.
   if (outcome.handled && 'forward' in outcome) {
-    const { model, permissionMode, content } = outcome.forward
+    const { model, effort, permissionMode, content } = outcome.forward
     const what = model !== undefined ? `Model set to \`${model}\`` : 'Yolo mode on'
     // Run in a top-level channel there is no thread to apply the override to
     // and no Message to open one on, so the daemon opens one itself — born
@@ -210,6 +210,7 @@ async function handle(
     if (!ctx.repo.getThread(conversationId)) {
       const started = await deps.startConversation(conversationId, content, interaction.user.id, {
         model,
+        effort,
         permissionMode,
       })
       await interaction.editReply(
@@ -220,6 +221,7 @@ async function handle(
       return
     }
     if (model !== undefined) ctx.repo.setThreadModel(conversationId, model)
+    if (effort !== undefined) ctx.repo.setThreadEffort(conversationId, effort)
     if (permissionMode !== undefined) ctx.repo.setThreadPermissionMode(conversationId, permissionMode)
     const queued = await deps.enqueueTurn(conversationId, content, interaction.user.id)
     await interaction.editReply(

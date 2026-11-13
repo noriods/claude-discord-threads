@@ -38,7 +38,7 @@ export type CommandOutcome =
   // plus the rest of the line, then hand it straight to the daemon to send as
   // the actual turn — there is no reply because the model's answer is the
   // reply. Each only ever sets the field it owns.
-  | { handled: true; forward: { content: string; model?: string; permissionMode?: string } }
+  | { handled: true; forward: { content: string; model?: string; effort?: string | null; permissionMode?: string } }
 
 export type CommandContext = {
   client: Client
@@ -49,6 +49,9 @@ export type CommandContext = {
   /** Thread-name suggester for `/rename`; tests swap in a fake. */
   suggestTitle?: Suggest
 }
+
+/** The SDK's EffortLevel values, in the order `/model` documents them. */
+export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 
 const PERMISSION_MODES = ['default', 'acceptEdits', 'auto', 'plan', 'dontAsk', 'bypassPermissions'] as const
 
@@ -65,10 +68,10 @@ const HELP = [
   '`/usage` — weekly plan usage and reset time',
   '`/cost` — what this thread has spent',
   '`/context` — context window used by this conversation',
-  '`/model [name]` — show, list or set the model for this thread',
-  '`/model global [name]` — the model every new thread starts on',
-  '`/model <name> <message>` — set the model and send `<message>` in the same step,' +
-    ' e.g. starting a thread on `opus` in one line',
+  '`/model [name] [effort]` — show, list or set the model (and effort: low, medium, high, xhigh, max) for this thread',
+  '`/model global [name] [effort]` — the model and effort every new thread starts on',
+  '`/model <name> [effort] <message>` — set the model and send `<message>` in the same step,' +
+    ' e.g. starting a thread on `opus high` in one line',
   '_(outside a thread, `/model` is `/model global` — there is no thread to set)_',
   '`/permissions [mode]` — show or set the permission mode',
   '`/yolo [on|off]` — bypass tool prompts entirely for this thread _(no buttons, no asking)_',
@@ -164,7 +167,8 @@ function status(ctx: CommandContext): string {
     `**state** ${thread.state}`,
     `**cwd** \`${thread.cwd}\``,
     `**model** ${thread.model ?? 'account default'}`,
-    `**new threads** ${ctx.repo.defaultModel() ?? 'account default'}`,
+    `**effort** ${thread.effort ?? 'default'}`,
+    `**new threads** ${ctx.repo.defaultModel() ?? 'account default'}, effort ${ctx.repo.defaultEffort() ?? 'default'}`,
     `**permissions** ${thread.permission_mode ?? 'auto'}`,
     `**session** \`${thread.cc_session_id ?? 'not started'}\``,
     `**turns** ${turns.done} done, ${turns.failed} failed, ${turns.open} open`,
@@ -341,6 +345,14 @@ async function resolveModelArg(
   return { value: match?.value ?? arg }
 }
 
+/** `opus low` → name + effort; a last word that isn't a level (`opus extreme`) stays part of the name. */
+function splitEffort(raw: string): { name: string; effort: string | null } {
+  const words = raw.split(/\s+/)
+  const last = words.at(-1)!.toLowerCase()
+  if (words.length > 1 && EFFORT_LEVELS.includes(last as never)) return { name: words.slice(0, -1).join(' '), effort: last }
+  return { name: raw, effort: null }
+}
+
 /**
  * `/model <name> <message>` — set the model and forward the rest as the turn,
  * so a thread can start on a non-default model in one line instead of two.
@@ -359,6 +371,8 @@ async function modelCommand(ctx: CommandContext, arg: string): Promise<CommandOu
   }
 
   const [first, ...restWords] = raw.split(/\s+/)
+  // The second word is an effort only if it is exactly a level.
+  const effort = EFFORT_LEVELS.includes(restWords[0]?.toLowerCase() as never) ? restWords.shift()!.toLowerCase() : null
   const prompt = restWords.join(' ')
   if (!prompt) return reply(await model(ctx, arg))
 
@@ -367,7 +381,7 @@ async function modelCommand(ctx: CommandContext, arg: string): Promise<CommandOu
   const match = matchModel(models, first!)
   if (!match) return reply(await model(ctx, arg))
 
-  return { handled: true, forward: { content: prompt, model: match.value } }
+  return { handled: true, forward: { content: prompt, model: match.value, effort } }
 }
 
 async function model(ctx: CommandContext, arg: string): Promise<string> {
@@ -392,8 +406,8 @@ async function model(ctx: CommandContext, arg: string): Promise<string> {
   if (!raw || lower === 'list') {
     const models = await availableModels(thread.cwd)
     const current = [
-      `Model for this thread: **${thread.model ?? 'account default'}**`,
-      `New threads start on: **${fallback ?? 'account default'}**`,
+      `Model for this thread: **${thread.model ?? 'account default'}**, effort **${thread.effort ?? 'default'}**`,
+      `New threads start on: **${fallback ?? 'account default'}**, effort **${ctx.repo.defaultEffort() ?? 'default'}**`,
     ].join('\n')
     if (models.length === 0) return `${current}\nCould not list available models right now.`
     const list = models.map(m => `\`${m.value}\` — ${m.displayName}`).join('\n')
@@ -407,17 +421,23 @@ async function model(ctx: CommandContext, arg: string): Promise<string> {
   // global setting is the thing an operator configured on purpose.
   if (RESET_WORDS.includes(lower)) {
     ctx.repo.setThreadModel(ctx.conversationId, fallback)
+    ctx.repo.setThreadEffort(ctx.conversationId, ctx.repo.defaultEffort())
     await refreshHeader(ctx)
     return fallback
       ? `Model reset to the default for new threads, \`${fallback}\`.`
       : 'Model reset to the account default for this thread.'
   }
 
-  const resolved = await resolveModelArg(thread.cwd, raw)
+  const { name, effort } = splitEffort(raw)
+  const resolved = await resolveModelArg(thread.cwd, name)
   if ('error' in resolved) return resolved.error
   ctx.repo.setThreadModel(ctx.conversationId, resolved.value)
+  ctx.repo.setThreadEffort(ctx.conversationId, effort)
   await refreshHeader(ctx)
-  return `Model set to \`${resolved.value}\` for this thread, starting with the next message.`
+  return (
+    `Model set to \`${resolved.value}\`${effort ? ` at \`${effort}\` effort` : ''} ` +
+    'for this thread, starting with the next message.'
+  )
 }
 
 /**
@@ -434,7 +454,7 @@ async function globalModel(ctx: CommandContext, arg: string): Promise<string> {
 
   if (!raw || lower === 'list') {
     const models = await availableModels(ctx.repo.getThread(ctx.conversationId)?.cwd ?? DEFAULT_CWD)
-    const head = `New threads start on: **${current ?? 'account default'}**`
+    const head = `New threads start on: **${current ?? 'account default'}**, effort **${ctx.repo.defaultEffort() ?? 'default'}**`
     if (models.length === 0) return `${head}\nCould not list available models right now.`
     const list = models.map(m => `\`${m.value}\` — ${m.displayName}`).join('\n')
     return `${head}\n\n${list}\n\nSet it with \`/model global <name>\`.`
@@ -442,17 +462,20 @@ async function globalModel(ctx: CommandContext, arg: string): Promise<string> {
 
   if (RESET_WORDS.includes(lower)) {
     ctx.repo.setDefaultModel(null)
+    ctx.repo.setDefaultEffort(null)
     return 'New threads will use the account default. Open threads keep theirs.'
   }
 
+  const { name, effort } = splitEffort(raw)
   const resolved = await resolveModelArg(
     ctx.repo.getThread(ctx.conversationId)?.cwd ?? DEFAULT_CWD,
-    raw,
+    name,
   )
   if ('error' in resolved) return resolved.error
   ctx.repo.setDefaultModel(resolved.value)
+  ctx.repo.setDefaultEffort(effort)
   return (
-    `New threads will start on \`${resolved.value}\`. ` +
+    `New threads will start on \`${resolved.value}\`${effort ? ` at \`${effort}\` effort` : ''}. ` +
     'Open threads keep the model they were opened with — use `/model <name>` to move one.'
   )
 }

@@ -119,7 +119,7 @@ const dmChannelUsers = new Map<string, string>()
 function ensureThread(
   convo: Conversation,
   rootMessageId: string,
-  override?: { model?: string; permissionMode?: string },
+  override?: { model?: string; effort?: string | null; permissionMode?: string },
 ) {
   const existing = repo.getThread(convo.id)
   // Posting after `/done` reopens the conversation, so it stays open again.
@@ -142,6 +142,8 @@ function ensureThread(
       // <message>`'s override is applied the same way, straight into
       // permission_mode, so a thread can be born already in yolo mode.
       model: override?.model ?? repo.defaultModel(),
+      // An override that names a model owns the effort too (null = default).
+      effort: override?.model !== undefined ? (override.effort ?? null) : repo.defaultEffort(),
       permission_mode: override?.permissionMode ?? null,
       header_message_id: null,
     })
@@ -218,7 +220,8 @@ async function handleInbound(msg: Message, trustAnswered = false): Promise<void>
   // actually send, so they fall through to the normal turn pipeline below
   // instead of answering here. Every other command is a complete answer with
   // no turn.
-  let forward: { content: string; model?: string; permissionMode?: string } | null = null
+  let forward: { content: string; model?: string; effort?: string | null; permissionMode?: string } | null =
+    null
   if (command.handled) {
     if ('forward' in command) {
       forward = command.forward
@@ -242,6 +245,10 @@ async function handleInbound(msg: Message, trustAnswered = false): Promise<void>
   if (existing && forward?.model !== undefined && existing.model !== forward.model) {
     repo.setThreadModel(convo.id, forward.model)
     thread.model = forward.model
+  }
+  if (existing && forward?.effort !== undefined && existing.effort !== forward.effort) {
+    repo.setThreadEffort(convo.id, forward.effort)
+    thread.effort = forward.effort
   }
   if (
     existing &&
@@ -311,6 +318,7 @@ async function handleInbound(msg: Message, trustAnswered = false): Promise<void>
       sessionId: thread.cc_session_id,
       cwd: thread.cwd,
       model: thread.model,
+      effort: thread.effort,
       permissionMode: thread.permission_mode,
       onToolUse: tool => status.note(tool),
     })
@@ -385,6 +393,7 @@ async function enqueueSyntheticTurn(
       sessionId: thread.cc_session_id,
       cwd: thread.cwd,
       model: thread.model,
+      effort: thread.effort,
       permissionMode: thread.permission_mode,
       onToolUse: tool => status.note(tool),
     })
@@ -405,7 +414,7 @@ async function startSlashConversation(
   channelId: string,
   content: string,
   userId: string,
-  override: { model?: string; permissionMode?: string },
+  override: { model?: string; effort?: string | null; permissionMode?: string },
 ): Promise<string | null> {
   try {
     const ch = await fetchSendable(client, channelId)
@@ -434,6 +443,7 @@ async function startSlashConversation(
       title: null,
       state: 'open',
       model: override.model ?? repo.defaultModel(),
+      effort: override.model !== undefined ? (override.effort ?? null) : repo.defaultEffort(),
       permission_mode: override.permissionMode ?? null,
       header_message_id: null,
     })
@@ -484,6 +494,7 @@ async function hydrate(turn: TurnRow): Promise<TurnContext | null> {
     sessionId: thread.cc_session_id,
     cwd: thread.cwd,
     model: thread.model,
+    effort: thread.effort,
     permissionMode: thread.permission_mode,
   }
 }
