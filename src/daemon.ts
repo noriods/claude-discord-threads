@@ -17,7 +17,7 @@ import {
 } from './config'
 import { openDb, type TurnRow } from './store/db'
 import { Repo } from './store/repo'
-import { gate, loadAccess, noteSent, watchApprovals } from './discord/access'
+import { channelDefaults, gate, loadAccess, noteSent, watchApprovals } from './discord/access'
 import { Signals } from './discord/signals'
 import {
   fetchSendable,
@@ -124,6 +124,8 @@ function ensureThread(
   const existing = repo.getThread(convo.id)
   // Posting after `/done` reopens the conversation, so it stays open again.
   if (existing?.state === 'archived') repo.reopenThread(convo.id)
+  // A channel can name a folder, model and permission mode in access.json.
+  const ch = existing ? {} : channelDefaults(convo.channelId)
   return (
     existing ??
     repo.createThread({
@@ -132,7 +134,7 @@ function ensureThread(
       root_message_id: convo.created ? rootMessageId : null,
       guild_id: convo.guildId,
       cc_session_id: null,
-      cwd: DEFAULT_CWD,
+      cwd: ch.cwd ?? DEFAULT_CWD,
       title: null,
       state: 'open',
       // A new thread inherits the global default set by `/model global`, or
@@ -141,10 +143,10 @@ function ensureThread(
       // conversation already under way onto a different model. `/yolo
       // <message>`'s override is applied the same way, straight into
       // permission_mode, so a thread can be born already in yolo mode.
-      model: override?.model ?? repo.defaultModel(),
+      model: override?.model ?? ch.model ?? repo.defaultModel(),
       // An override that names a model owns the effort too (null = default).
       effort: override?.model !== undefined ? (override.effort ?? null) : repo.defaultEffort(),
-      permission_mode: override?.permissionMode ?? null,
+      permission_mode: override?.permissionMode ?? ch.permissionMode ?? null,
       header_message_id: null,
     })
   )
@@ -433,18 +435,19 @@ async function startSlashConversation(
       conversationId = thread.id
       rootId = root.id
     }
+    const defaults = channelDefaults(channelId)
     repo.createThread({
       thread_id: conversationId,
       channel_id: channelId,
       root_message_id: rootId,
       guild_id: isDM ? null : ('guildId' in ch ? ch.guildId : null),
       cc_session_id: null,
-      cwd: DEFAULT_CWD,
+      cwd: defaults.cwd ?? DEFAULT_CWD,
       title: null,
       state: 'open',
-      model: override.model ?? repo.defaultModel(),
+      model: override.model ?? defaults.model ?? repo.defaultModel(),
       effort: override.model !== undefined ? (override.effort ?? null) : repo.defaultEffort(),
-      permission_mode: override.permissionMode ?? null,
+      permission_mode: override.permissionMode ?? defaults.permissionMode ?? null,
       header_message_id: null,
     })
     if (!isDM) {
