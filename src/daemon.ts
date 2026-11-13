@@ -145,7 +145,7 @@ function ensureThread(
       // permission_mode, so a thread can be born already in yolo mode.
       model: override?.model ?? ch.model ?? repo.defaultModel(),
       // An override that names a model owns the effort too (null = default).
-      effort: override?.model !== undefined ? (override.effort ?? null) : repo.defaultEffort(),
+      effort: override?.model !== undefined ? (override.effort ?? null) : ch.model ? null : repo.defaultEffort(),
       permission_mode: override?.permissionMode ?? ch.permissionMode ?? null,
       header_message_id: null,
     })
@@ -446,7 +446,7 @@ async function startSlashConversation(
       title: null,
       state: 'open',
       model: override.model ?? defaults.model ?? repo.defaultModel(),
-      effort: override.model !== undefined ? (override.effort ?? null) : repo.defaultEffort(),
+      effort: override.model !== undefined ? (override.effort ?? null) : defaults.model ? null : repo.defaultEffort(),
       permission_mode: override.permissionMode ?? defaults.permissionMode ?? null,
       header_message_id: null,
     })
