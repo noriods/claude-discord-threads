@@ -345,11 +345,11 @@ async function resolveModelArg(
   return { value: match?.value ?? arg }
 }
 
-/** `opus low` → name + effort; anything else (incl. `opus extreme`) is all name. */
+/** `opus low` → name + effort; a last word that isn't a level (`opus extreme`) stays part of the name. */
 function splitEffort(raw: string): { name: string; effort: string | null } {
   const words = raw.split(/\s+/)
-  const last = words[1]?.toLowerCase()
-  if (words.length === 2 && EFFORT_LEVELS.includes(last as never)) return { name: words[0]!, effort: last! }
+  const last = words.at(-1)!.toLowerCase()
+  if (words.length > 1 && EFFORT_LEVELS.includes(last as never)) return { name: words.slice(0, -1).join(' '), effort: last }
   return { name: raw, effort: null }
 }
 

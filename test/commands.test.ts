@@ -531,6 +531,11 @@ describe('/model effort', () => {
     expect(repo.defaultEffort()).toBeNull()
   })
 
+  test('effort is read off the last word, so multi-word display names still work', async () => {
+    const { ctx } = setup()
+    expect(replyOf(await handleCommand('/model global Opus 1M low', ctx))).toContain('Unknown model `Opus 1M`')
+  })
+
   test('reset returns the thread to the global model and effort; global reset clears both', async () => {
     const { ctx, repo } = setup()
     repo.setDefaultModel('sonnet')
