@@ -140,7 +140,13 @@ Configure outbound behavior with `/discord-threads:access set <key> <value>`.
       // true: respond only to @mentions and replies.
       "requireMention": true,
       // Restrict triggers to these senders. Empty = any member (subject to requireMention).
-      "allowFrom": []
+      "allowFrom": [],
+      // Optional. New threads in this channel start with these instead of the
+      // global defaults. A `/model` or `/yolo` override on the message still wins.
+      // Existing threads keep what they started with.
+      "cwd": "/home/hermes/bots/finance",   // working directory (loads its CLAUDE.md)
+      "model": "claude-fable-5-2",
+      "permissionMode": "bypassPermissions" // the value `/yolo` sets
     }
   },
 

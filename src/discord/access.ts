@@ -30,6 +30,18 @@ export type PendingEntry = {
 export type GroupPolicy = {
   requireMention: boolean
   allowFrom: string[]
+  /** Working directory for new threads in this channel (e.g. a bot folder). */
+  cwd?: string
+  /** Model for new threads in this channel. A `/model` override still wins. */
+  model?: string
+  /** Permission mode for new threads, e.g. 'bypassPermissions' (what `/yolo` sets). */
+  permissionMode?: string
+}
+
+/** The per-channel thread defaults from access.json; {} for channels without them. */
+export function channelDefaults(channelId: string): Pick<GroupPolicy, 'cwd' | 'model' | 'permissionMode'> {
+  const g = loadAccess().groups[channelId]
+  return g ? { cwd: g.cwd, model: g.model, permissionMode: g.permissionMode } : {}
 }
 
 export type Access = {
